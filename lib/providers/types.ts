@@ -37,6 +37,8 @@ export interface ProviderResult {
   text?: string;
   raw?: unknown;
   error?: string;
+  /** True when this is cached data served because the live fetch failed. */
+  stale?: boolean;
 }
 
 /** Envelope returned by the API routes. */

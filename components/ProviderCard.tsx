@@ -82,7 +82,9 @@ function renderBody(provider: ProviderKey, state: State) {
     <>
       <div className="card-head">
         <span className="label">{label}</span>
-        <span className="tag">{planLabel || 'live'}</span>
+        <span className={data.stale ? 'tag stale' : 'tag'}>
+          {data.stale ? 'cached' : planLabel || 'live'}
+        </span>
       </div>
       {limits.length === 0 && data.text && <div className="text-note">{data.text}</div>}
       {limits.map((l, i) => (

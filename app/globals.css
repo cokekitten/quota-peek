@@ -136,6 +136,9 @@ main {
 .card.error .card-head .tag {
   color: var(--red);
 }
+.card-head .tag.stale {
+  color: var(--yellow);
+}
 
 /* Metrics */
 .metric {

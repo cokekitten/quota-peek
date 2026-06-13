@@ -25,7 +25,7 @@ Requires Node ≥ 18.18.
 
 | Provider | How it authenticates | Config |
 | --- | --- | --- |
-| **Claude Code** | runs `claude -p "/usage" --output-format json` (CLI must be logged in) | optional `CLAUDE_TIMEOUT_MS` |
+| **Claude Code** | OAuth token from `~/.claude/.credentials.json` → calls Anthropic's `/api/oauth/usage` (structured JSON, same source `claude-hud` uses) | just be logged in via `claude`; optional `CLAUDE_CREDENTIALS_PATH`, `CLAUDE_TIMEOUT_MS` |
 | **Codex** | reads `~/.codex/auth.json`, calls internal `wham/usage` endpoint | optional `CODEX_AUTH_PATH`, `CODEX_USAGE_URL` |
 | **GLM** | API key header | `GLM_API_KEY` (required), optional `GLM_BASE_URL` (z.ai international) |
 
@@ -78,5 +78,6 @@ Each provider's `summary.limits` is an array of `{ label, kind, percent, used?, 
 ## Notes & caveats
 
 - **Codex** uses an internal ChatGPT endpoint (`backend-api/wham/usage`). It can change without notice.
+- **Claude** uses Anthropic's OAuth usage API (`/api/oauth/usage`), which returns structured `five_hour` / `seven_day` windows with `utilization` and `resets_at`. Results are cached for 60s and served stale for up to 5 min on failure, because the API rate-limits aggressively. If the OAuth token expires, run `claude` interactively to refresh it.
 - **GLM** period labels (`5h window` / `weekly` / `monthly`) are derived from each limit's actual `nextResetTime`, not guessed from the opaque `unit` field.
 - The dashboard auto-refresh toggle defaults **off**; when on, it polls every 10 minutes.
