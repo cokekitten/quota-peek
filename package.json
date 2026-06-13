@@ -4,9 +4,9 @@
   "private": true,
   "description": "Aggregate usage/quota from Claude Code, Codex, and GLM Coding Plan into one dashboard.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 5928",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 5928",
     "lint": "next lint"
   },
   "dependencies": {
