@@ -1,13 +1,38 @@
+import type { ProviderResult, UsageLimit } from './types';
+
 const BASE_URL = (process.env.GLM_BASE_URL || 'https://open.bigmodel.cn').replace(/\/$/, '');
 const QUOTA_PATH = '/api/monitor/usage/quota/limit';
 
-const LEVEL_LABEL = { lite: 'Lite', pro: 'Pro', max: 'Max' };
+const LEVEL_LABEL: Record<string, string> = { lite: 'Lite', pro: 'Pro', max: 'Max' };
+
+interface GlmUsageDetail {
+  modelCode?: string;
+  usage?: number;
+}
+interface GlmLimit {
+  type?: string;
+  usage?: number;
+  currentValue?: number;
+  percentage?: number;
+  nextResetTime?: number;
+  usageDetails?: GlmUsageDetail[];
+}
+interface GlmData {
+  level?: string;
+  limits?: GlmLimit[];
+}
+interface GlmResponse {
+  code?: number;
+  msg?: string;
+  success?: boolean;
+  data?: GlmData;
+}
 
 /**
  * GLM Coding Plan usage via the public monitor endpoint.
  * Requires GLM_API_KEY (sent as the raw Authorization header).
  */
-export async function fetchGlmUsage() {
+export async function fetchGlmUsage(): Promise<ProviderResult> {
   const apiKey = process.env.GLM_API_KEY;
   if (!apiKey) {
     return {
@@ -30,74 +55,77 @@ export async function fetchGlmUsage() {
         error: `HTTP ${resp.status} ${resp.statusText}`,
       };
     }
-    const data = await resp.json();
+    const data = (await resp.json()) as GlmResponse;
     if (!data?.success && data?.code !== 200) {
       return {
         ok: false,
         provider: 'glm',
         label: 'GLM Coding Plan',
         error: data?.msg || 'unknown error',
-        raw: data,
+        raw: data as unknown,
       };
     }
     return {
       ok: true,
       provider: 'glm',
       label: 'GLM Coding Plan',
-      summary: summarize(data.data, data),
-      raw: data,
+      summary: summarize(data.data),
+      raw: data as unknown,
     };
   } catch (err) {
     return {
       ok: false,
       provider: 'glm',
       label: 'GLM Coding Plan',
-      error: err.message,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 }
 
 /** Turn GLM's limits[] into a normalized, dashboard-friendly shape. */
-function summarize(d, full) {
+function summarize(d?: GlmData): { level: string | null; planLabel: string; limits: UsageLimit[] } {
   const level = d?.level ? LEVEL_LABEL[d.level] || d.level : null;
   const now = Date.now();
   const limits = (d?.limits || []).map((l) => normalizeLimit(l, now));
-  return { level, limits, plan_label: level ? `GLM ${level}` : 'GLM' };
+  return {
+    level: level ?? null,
+    planLabel: level ? `GLM ${level}` : 'GLM',
+    limits,
+  };
 }
 
-function normalizeLimit(l, now) {
+function normalizeLimit(l: GlmLimit, now: number): UsageLimit {
   const hasMcp = Array.isArray(l.usageDetails) && l.usageDetails.length > 0;
   const period = l.nextResetTime ? periodLabel(l.nextResetTime - now) : null;
 
-  let kind;
+  let kind: string;
   if (hasMcp) kind = 'MCP';
   else if (l.type === 'TIME_LIMIT') kind = 'Prompts';
   else if (l.type === 'TOKENS_LIMIT') kind = 'Tokens';
   else kind = l.type || 'Limit';
 
-  const label = period ? `${kind} · ${period}` : kind;
-
-  const out = {
-    label,
+  const out: UsageLimit = {
+    label: period ? `${kind} · ${period}` : kind,
     kind,
-    percent: typeof l.percentage === 'number' ? l.percentage : null,
+    percent: typeof l.percentage === 'number' ? l.percentage : 0,
   };
   if (typeof l.currentValue === 'number' && typeof l.usage === 'number') {
     out.used = l.currentValue;
     out.total = l.usage;
   }
-  if (l.nextResetTime) out.reset_at = new Date(l.nextResetTime).toISOString();
+  if (l.nextResetTime) out.resetAt = new Date(l.nextResetTime).toISOString();
   if (hasMcp) {
-    out.detail = l.usageDetails
-      .filter((u) => u.usage > 0)
+    const detail = (l.usageDetails || [])
+      .filter((u) => (u.usage ?? 0) > 0)
       .map((u) => `${u.modelCode}: ${u.usage}`)
       .join(', ');
+    if (detail) out.detail = detail;
   }
   return out;
 }
 
 /** Derive a human period label from a reset delta (ms). */
-function periodLabel(deltaMs) {
+function periodLabel(deltaMs: number): string {
   const h = deltaMs / 3_600_000;
   if (h <= 12) return '5h window';
   if (h <= 8 * 24) return 'weekly';
