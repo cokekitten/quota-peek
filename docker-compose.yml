@@ -1,0 +1,16 @@
+services:
+  quota-peek:
+    build: .
+    image: quota-peek:latest
+    container_name: quota-peek
+    restart: unless-stopped
+    ports:
+      - "5928:5928"
+    environment:
+      GLM_API_KEY: ${GLM_API_KEY:?GLM_API_KEY is required — set it in .env or your shell}
+      GLM_BASE_URL: https://open.bigmodel.cn
+      CLAUDE_CREDENTIALS_PATH: /secrets/claude-creds.json
+      CODEX_AUTH_PATH: /secrets/codex-auth.json
+    volumes:
+      - ${CLAUDE_CREDENTIALS:-~/.claude/.credentials.json}:/secrets/claude-creds.json:ro
+      - ${CODEX_AUTH:-~/.codex/auth.json}:/secrets/codex-auth.json:ro

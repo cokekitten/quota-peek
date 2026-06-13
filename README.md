@@ -71,26 +71,25 @@ docker run -d --name quota-peek -p 5928:5928 \
 - **Claude Code** & **Codex** — these read credential *files* (`~/.claude/.credentials.json`, `~/.codex/auth.json`) that only exist where you logged in. The image never bakes them in. Instead, bind-mount each file from your host into the container (read-only with `:ro`) and point the app at the mount path via `CLAUDE_CREDENTIALS_PATH` / `CODEX_AUTH_PATH`. Omit a mount and that provider simply shows as offline — the others keep working.
 
 <details>
-<summary>Or with Docker Compose</summary>
+<summary>Or with Docker Compose (recommended)</summary>
 
-```yaml
-# docker-compose.yml
-services:
-  quota-peek:
-    build: .
-    ports:
-      - "5928:5928"
-    environment:
-      GLM_API_KEY: "your-glm-key"
-      CLAUDE_CREDENTIALS_PATH: "/secrets/claude-creds.json"
-      CODEX_AUTH_PATH: "/secrets/codex-auth.json"
-    volumes:
-      - ~/.claude/.credentials.json:/secrets/claude-creds.json:ro
-      - ~/.codex/auth.json:/secrets/codex-auth.json:ro
-    restart: unless-stopped
-```
+The repo includes a [`docker-compose.yml`](docker-compose.yml) that does all of the
+above. It reads `GLM_API_KEY` from your environment (or a `.env` file next to the
+compose file), and defaults the credential mounts to the usual paths — override
+them if yours differ.
 
 ```bash
+export GLM_API_KEY="your-glm-key"
+docker compose up -d --build   # → http://localhost:5928
+docker compose logs -f         # follow logs
+docker compose down            # stop & remove
+```
+
+Override the credential paths (e.g. non-default locations):
+
+```bash
+CLAUDE_CREDENTIALS=/path/to/creds.json \
+CODEX_AUTH=/path/to/auth.json \
 docker compose up -d --build
 ```
 
