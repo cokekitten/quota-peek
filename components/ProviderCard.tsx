@@ -99,7 +99,7 @@ function renderBody(provider: ProviderKey, state: State) {
 function Metric({ limit }: { limit: NonNullable<ProviderResult['summary']>['limits'][number] }) {
   const p = Math.max(0, Math.min(100, limit.percent));
   const color = p >= 90 ? 'var(--red)' : p >= 70 ? 'var(--yellow)' : 'var(--green)';
-  const reset = limit.resetAt ? `resets in ${fmtRel(limit.resetAt)}` : null;
+  const reset = limit.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
 
   return (
     <div className="metric">
