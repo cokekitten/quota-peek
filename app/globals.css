@@ -120,11 +120,17 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 16px;
 }
 .card-head .label {
   font-size: 16px;
   font-weight: 600;
+}
+.head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .card-head .tag {
   font-size: 11px;
@@ -185,10 +191,11 @@ main {
   color: var(--accent);
   opacity: 0.85;
 }
-.detail {
-  margin-top: 4px;
-  font-size: 11px;
+
+.text-note {
+  font-size: 12px;
   color: var(--muted);
+  white-space: pre-wrap;
 }
 
 .raw {
@@ -210,12 +217,6 @@ main {
   word-break: break-word;
   max-height: 220px;
   overflow: auto;
-}
-
-.text-note {
-  font-size: 12px;
-  color: var(--muted);
-  white-space: pre-wrap;
 }
 
 .spinner {

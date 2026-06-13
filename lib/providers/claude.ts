@@ -31,8 +31,6 @@ interface UsageWindow {
 interface UsageResponse {
   five_hour?: UsageWindow;
   seven_day?: UsageWindow;
-  seven_day_sonnet?: UsageWindow;
-  seven_day_opus?: UsageWindow;
 }
 
 /**
@@ -155,17 +153,11 @@ async function fetchLive(): Promise<ProviderResult> {
     };
   }
 
-  // 3. Normalize into limits.
+  // 3. Normalize into limits — only the 5h and weekly windows.
   const planName = planLabel(subscriptionType);
   const limits: UsageLimit[] = [];
-  pushWindow(limits, '5h window', 'five_hour', data.five_hour);
-  pushWindow(limits, 'Week · all models', 'seven_day', data.seven_day);
-  if (data.seven_day_sonnet) {
-    pushWindow(limits, 'Week · Sonnet only', 'seven_day_sonnet', data.seven_day_sonnet);
-  }
-  if (data.seven_day_opus) {
-    pushWindow(limits, 'Week · Opus only', 'seven_day_opus', data.seven_day_opus);
-  }
+  pushWindow(limits, '5h Window', '5h', data.five_hour);
+  pushWindow(limits, 'Weekly', 'weekly', data.seven_day);
 
   return {
     ok: true,

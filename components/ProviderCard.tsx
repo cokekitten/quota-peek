@@ -82,20 +82,16 @@ function renderBody(provider: ProviderKey, state: State) {
     <>
       <div className="card-head">
         <span className="label">{label}</span>
-        <span className={data.stale ? 'tag stale' : 'tag'}>
-          {data.stale ? 'cached' : planLabel || 'live'}
+        <span className="head-right">
+          <span className="updated">{new Date(at).toLocaleTimeString()}</span>
+          <span className={data.stale ? 'tag stale' : 'tag'}>
+            {data.stale ? 'cached' : planLabel || 'live'}
+          </span>
         </span>
       </div>
-      {limits.length === 0 && data.text && <div className="text-note">{data.text}</div>}
       {limits.map((l, i) => (
         <Metric key={`${l.kind}-${i}`} limit={l} />
       ))}
-      {data.raw != null && (
-        <details className="raw">
-          <summary>raw response · {new Date(at).toLocaleTimeString()}</summary>
-          <pre>{JSON.stringify(data.raw, null, 2)}</pre>
-        </details>
-      )}
     </>
   );
 }
@@ -103,10 +99,6 @@ function renderBody(provider: ProviderKey, state: State) {
 function Metric({ limit }: { limit: NonNullable<ProviderResult['summary']>['limits'][number] }) {
   const p = Math.max(0, Math.min(100, limit.percent));
   const color = p >= 90 ? 'var(--red)' : p >= 70 ? 'var(--yellow)' : 'var(--green)';
-  const usedTotal =
-    typeof limit.used === 'number' && typeof limit.total === 'number'
-      ? `${limit.used} / ${limit.total}`
-      : null;
   const reset = limit.resetAt ? `resets ${fmtRel(limit.resetAt)}` : null;
 
   return (
@@ -118,32 +110,33 @@ function Metric({ limit }: { limit: NonNullable<ProviderResult['summary']>['limi
       <div className="bar">
         <span style={{ width: `${p}%`, background: color }} />
       </div>
-      {(usedTotal || reset) && (
+      {reset && (
         <div className="meta">
-          {usedTotal && <span>{usedTotal}</span>}
-          {reset && (
-            <span className="reset" title={limit.resetAt}>
-              {reset}
-            </span>
-          )}
+          <span className="reset" title={limit.resetAt}>
+            {reset}
+          </span>
         </div>
       )}
-      {limit.detail && <div className="detail">{limit.detail}</div>}
     </div>
   );
 }
 
 function fmtRel(iso: string): string {
-  const diff = new Date(iso).getTime() - Date.now();
-  if (diff <= 0) return 'soon';
-  const h = Math.round(diff / 3_600_000);
-  if (h < 1) return '<1h';
-  if (h < 48) return `${h}h`;
-  return `${Math.round(h / 24)}d`;
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return 'now';
+  if (ms < 60_000) return '<1 min';
+  const totalMin = Math.floor(ms / 60_000);
+  const min = totalMin % 60;
+  const totalHr = Math.floor(totalMin / 60);
+  const hr = totalHr % 24;
+  const days = Math.floor(totalHr / 24);
+  if (days > 0) return `${days} d ${hr} hr`;
+  if (totalHr > 0) return min > 0 ? `${totalHr} hr ${min} min` : `${totalHr} hr`;
+  return `${min} min`;
 }
 
 const LABELS: Record<ProviderKey, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
-  glm: 'GLM Coding Plan',
-};
+  glm: 'GLM',
+};;

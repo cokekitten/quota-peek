@@ -5,17 +5,10 @@ const QUOTA_PATH = '/api/monitor/usage/quota/limit';
 
 const LEVEL_LABEL: Record<string, string> = { lite: 'Lite', pro: 'Pro', max: 'Max' };
 
-interface GlmUsageDetail {
-  modelCode?: string;
-  usage?: number;
-}
 interface GlmLimit {
   type?: string;
-  usage?: number;
-  currentValue?: number;
   percentage?: number;
   nextResetTime?: number;
-  usageDetails?: GlmUsageDetail[];
 }
 interface GlmData {
   level?: string;
@@ -38,7 +31,7 @@ export async function fetchGlmUsage(): Promise<ProviderResult> {
     return {
       ok: false,
       provider: 'glm',
-      label: 'GLM Coding Plan',
+      label: 'GLM',
       error: 'GLM_API_KEY not set (copy .env.example -> .env)',
     };
   }
@@ -51,7 +44,7 @@ export async function fetchGlmUsage(): Promise<ProviderResult> {
       return {
         ok: false,
         provider: 'glm',
-        label: 'GLM Coding Plan',
+        label: 'GLM',
         error: `HTTP ${resp.status} ${resp.statusText}`,
       };
     }
@@ -60,7 +53,7 @@ export async function fetchGlmUsage(): Promise<ProviderResult> {
       return {
         ok: false,
         provider: 'glm',
-        label: 'GLM Coding Plan',
+        label: 'GLM',
         error: data?.msg || 'unknown error',
         raw: data as unknown,
       };
@@ -68,7 +61,7 @@ export async function fetchGlmUsage(): Promise<ProviderResult> {
     return {
       ok: true,
       provider: 'glm',
-      label: 'GLM Coding Plan',
+      label: 'GLM',
       summary: summarize(data.data),
       raw: data as unknown,
     };
@@ -76,17 +69,22 @@ export async function fetchGlmUsage(): Promise<ProviderResult> {
     return {
       ok: false,
       provider: 'glm',
-      label: 'GLM Coding Plan',
+      label: 'GLM',
       error: err instanceof Error ? err.message : String(err),
     };
   }
 }
 
-/** Turn GLM's limits[] into a normalized, dashboard-friendly shape. */
+/** Keep only the 5h + weekly token windows; standardize their labels. */
 function summarize(d?: GlmData): { level: string | null; planLabel: string; limits: UsageLimit[] } {
   const level = d?.level ? LEVEL_LABEL[d.level] || d.level : null;
   const now = Date.now();
-  const limits = (d?.limits || []).map((l) => normalizeLimit(l, now));
+  const limits = (d?.limits || [])
+    .filter((l): l is GlmLimit & { nextResetTime: number; type: string } =>
+      l.type === 'TOKENS_LIMIT' && typeof l.nextResetTime === 'number',
+    )
+    .map((l) => normalizeLimit(l, now))
+    .filter((l): l is UsageLimit => l !== null);
   return {
     level: level ?? null,
     planLabel: level ? `GLM ${level}` : 'GLM',
@@ -94,33 +92,15 @@ function summarize(d?: GlmData): { level: string | null; planLabel: string; limi
   };
 }
 
-function normalizeLimit(l: GlmLimit, now: number): UsageLimit {
-  const hasMcp = Array.isArray(l.usageDetails) && l.usageDetails.length > 0;
-  const period = l.nextResetTime ? periodLabel(l.nextResetTime - now) : null;
-
-  let kind: string;
-  if (hasMcp) kind = 'MCP';
-  else if (l.type === 'TIME_LIMIT') kind = 'Prompts';
-  else if (l.type === 'TOKENS_LIMIT') kind = 'Tokens';
-  else kind = l.type || 'Limit';
-
+function normalizeLimit(l: GlmLimit & { nextResetTime: number }, now: number): UsageLimit | null {
+  const period = periodLabel(l.nextResetTime - now);
+  if (period !== '5h window' && period !== 'weekly') return null;
   const out: UsageLimit = {
-    label: period ? `${kind} · ${period}` : kind,
-    kind,
+    label: period === '5h window' ? '5h Window' : 'Weekly',
+    kind: period === '5h window' ? '5h' : 'weekly',
     percent: typeof l.percentage === 'number' ? l.percentage : 0,
   };
-  if (typeof l.currentValue === 'number' && typeof l.usage === 'number') {
-    out.used = l.currentValue;
-    out.total = l.usage;
-  }
-  if (l.nextResetTime) out.resetAt = new Date(l.nextResetTime).toISOString();
-  if (hasMcp) {
-    const detail = (l.usageDetails || [])
-      .filter((u) => (u.usage ?? 0) > 0)
-      .map((u) => `${u.modelCode}: ${u.usage}`)
-      .join(', ');
-    if (detail) out.detail = detail;
-  }
+  out.resetAt = new Date(l.nextResetTime).toISOString();
   return out;
 }
 

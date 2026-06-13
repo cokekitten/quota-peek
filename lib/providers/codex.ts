@@ -74,8 +74,8 @@ export async function fetchCodexUsage(): Promise<ProviderResult> {
     const data = (await resp.json()) as CodexResponse;
     const rl = data?.rate_limit || {};
     const limits: UsageLimit[] = [
-      windowLimit('Primary', rl.primary_window),
-      windowLimit('Secondary', rl.secondary_window),
+      windowLimit('5h Window', '5h', rl.primary_window),
+      windowLimit('Weekly', 'weekly', rl.secondary_window),
     ].filter((l): l is UsageLimit => l !== null);
 
     const planType = data.plan_type ?? null;
@@ -85,7 +85,7 @@ export async function fetchCodexUsage(): Promise<ProviderResult> {
       label: 'Codex',
       summary: {
         plan_type: planType,
-        planLabel: planType ? `Codex ${planType}` : 'Codex',
+        planLabel: planType ? `Codex ${cap(planType)}` : 'Codex',
         limits,
       },
       raw: data as unknown,
@@ -101,22 +101,18 @@ export async function fetchCodexUsage(): Promise<ProviderResult> {
 }
 
 /** Map a Codex rate-limit window into the shared limit shape. */
-function windowLimit(name: string, w?: CodexWindow): UsageLimit | null {
+function windowLimit(label: string, kind: string, w?: CodexWindow): UsageLimit | null {
   if (!w) return null;
-  const period = w.limit_window_seconds ? periodLabel(w.limit_window_seconds) : null;
   const out: UsageLimit = {
-    label: period ? `${name} · ${period}` : name,
-    kind: name,
+    label,
+    kind,
     percent: typeof w.used_percent === 'number' ? w.used_percent : 0,
   };
   if (w.reset_at) out.resetAt = new Date(w.reset_at * 1000).toISOString();
   return out;
 }
 
-function periodLabel(seconds: number): string {
-  const h = seconds / 3600;
-  if (h <= 12) return '5h window';
-  if (h <= 8 * 24) return 'weekly';
-  if (h <= 35 * 24) return 'monthly';
-  return `~${Math.round(h / 24)}d`;
+/** Capitalize the first letter (e.g. "pro" -> "Pro"). */
+function cap(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }

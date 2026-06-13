@@ -12,17 +12,11 @@ const AUTO_INTERVAL = 10 * 60 * 1000; // 10 minutes
 
 export default function Dashboard({ providers }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [auto, setAuto] = useState(false);
   const autoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
-    setUpdatedAt(new Date());
-  }, []);
-
-  useEffect(() => {
-    setUpdatedAt(new Date()); // initial load timestamp
   }, []);
 
   useEffect(() => {
@@ -45,9 +39,6 @@ export default function Dashboard({ providers }: Props) {
           <span className="sub">AI coding plan usage</span>
         </div>
         <div className="controls">
-          {updatedAt && (
-            <span className="updated">updated {updatedAt.toLocaleTimeString()}</span>
-          )}
           <label className="auto">
             <input
               type="checkbox"
