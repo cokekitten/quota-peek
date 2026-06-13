@@ -1,0 +1,33 @@
+# Dependencies — installed inside the image
+node_modules
+**/node_modules
+
+# Build output — regenerated inside the image
+.next
+out
+build
+dist
+
+# Secrets — NEVER bake into the image
+.env
+.env.*
+!.env.example
+
+# Git & misc
+.git
+.gitignore
+.DS_Store
+*.log
+npm-debug.log*
+.DS_Store
+
+# Docker's own files
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Docs / local artifacts
+docs
+README.md
+LICENSE
+*.md

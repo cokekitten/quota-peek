@@ -38,6 +38,68 @@ npm run build && npm start
 
 Requires Node ≥ 18.18. The app runs on **port 5928** by default (pinned in `package.json`).
 
+### 🐳 Run with Docker
+
+Prefer containers? The repo ships a multi-stage `Dockerfile` that builds the
+Next.js **standalone** bundle into a slim image (~200 MB). No Node on your host
+needed.
+
+```bash
+git clone https://github.com/cokekitten/quota-peek.git
+cd quota-peek
+docker build -t quota-peek .
+```
+
+Then run it, mounting your local credential files read-only and passing the
+GLM key as an env var:
+
+```bash
+docker run -d --name quota-peek -p 5928:5928 \
+  -e GLM_API_KEY="your-glm-key" \
+  -e CLAUDE_CREDENTIALS_PATH="/secrets/claude-creds.json" \
+  -e CODEX_AUTH_PATH="/secrets/codex-auth.json" \
+  -v "$HOME/.claude/.credentials.json:/secrets/claude-creds.json:ro" \
+  -v "$HOME/.codex/auth.json:/secrets/codex-auth.json:ro" \
+  quota-peek
+```
+
+→ open **http://localhost:5928**
+
+**How the secrets work in Docker:**
+
+- **GLM** — a plain API key, passed via `-e GLM_API_KEY`.
+- **Claude Code** & **Codex** — these read credential *files* (`~/.claude/.credentials.json`, `~/.codex/auth.json`) that only exist where you logged in. The image never bakes them in. Instead, bind-mount each file from your host into the container (read-only with `:ro`) and point the app at the mount path via `CLAUDE_CREDENTIALS_PATH` / `CODEX_AUTH_PATH`. Omit a mount and that provider simply shows as offline — the others keep working.
+
+<details>
+<summary>Or with Docker Compose</summary>
+
+```yaml
+# docker-compose.yml
+services:
+  quota-peek:
+    build: .
+    ports:
+      - "5928:5928"
+    environment:
+      GLM_API_KEY: "your-glm-key"
+      CLAUDE_CREDENTIALS_PATH: "/secrets/claude-creds.json"
+      CODEX_AUTH_PATH: "/secrets/codex-auth.json"
+    volumes:
+      - ~/.claude/.credentials.json:/secrets/claude-creds.json:ro
+      - ~/.codex/auth.json:/secrets/codex-auth.json:ro
+    restart: unless-stopped
+```
+
+```bash
+docker compose up -d --build
+```
+
+</details>
+
+> **Note:** if your Claude OAuth token expires, refresh it by running `claude`
+> on the host (where you're logged in), then restart the container. The mounted
+> file updates automatically.
+
 ## 🔧 Provider configuration
 
 | Provider | How it authenticates | What you need |
