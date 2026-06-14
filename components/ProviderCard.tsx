@@ -10,9 +10,13 @@ interface Props {
 }
 
 type State =
+  // Initial load only — no data yet, show the loading card.
   | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; data: ProviderResult; at: string };
+  // Have data. `refreshing` is true while a background refetch is in flight;
+  // the old data stays visible (bars + countdowns) and is swapped in place.
+  | { status: 'ready'; data: ProviderResult; at: string; refreshing: boolean }
+  // Initial fetch failed with no data to fall back on.
+  | { status: 'error'; message: string };
 
 export default function ProviderCard({ provider, refreshKey }: Props) {
   const [state, setState] = useState<State>({ status: 'loading' });
@@ -21,7 +25,11 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
 
   useEffect(() => {
     const id = ++reqId.current;
-    setState({ status: 'loading' });
+    // Only show the full loading screen on the very first load. On refresh,
+    // keep the existing data visible and just flag that we're refreshing.
+    setState((prev) =>
+      prev.status === 'ready' ? { ...prev, refreshing: true } : { status: 'loading' },
+    );
 
     fetch(`/api/usage/${provider}`)
       .then(async (r) => {
@@ -30,14 +38,16 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
           throw new Error((json as { error?: string }).error || `HTTP ${r.status}`);
         }
         if (id !== reqId.current) return; // stale
-        setState({ status: 'ready', data: json.provider, at: json.timestamp });
+        setState({ status: 'ready', data: json.provider, at: json.timestamp, refreshing: false });
       })
       .catch((err: unknown) => {
         if (id !== reqId.current) return; // stale
-        setState({
-          status: 'error',
-          message: err instanceof Error ? err.message : String(err),
-        });
+        const message = err instanceof Error ? err.message : String(err);
+        // If we already have data, keep it (the next refresh will retry) instead
+        // of flipping the whole card to an error state.
+        setState((prev) =>
+          prev.status === 'ready' ? { ...prev, refreshing: false } : { status: 'error', message },
+        );
       });
   }, [provider, refreshKey]);
 
@@ -74,7 +84,7 @@ function renderBody(provider: ProviderKey, state: State) {
     );
   }
 
-  const { data, at } = state;
+  const { data, at, refreshing } = state;
   const limits = data.summary?.limits ?? [];
   const planLabel = data.summary?.planLabel;
 
@@ -83,14 +93,20 @@ function renderBody(provider: ProviderKey, state: State) {
       <div className="card-head">
         <span className="label">{label}</span>
         <span className="head-right">
-          <span className="updated">{new Date(at).toLocaleTimeString()}</span>
+          {refreshing ? (
+            <span className="spinner" title="refreshing" />
+          ) : (
+            <span className="updated">{new Date(at).toLocaleTimeString()}</span>
+          )}
           <span className={data.stale ? 'tag stale' : 'tag'}>
             {data.stale ? 'cached' : planLabel || 'live'}
           </span>
         </span>
       </div>
-      {limits.map((l, i) => (
-        <Metric key={`${l.kind}-${i}`} limit={l} />
+      {/* key by kind (always '5h' + 'weekly') so React updates bars in place
+          rather than remounting — the width transitions smoothly via CSS. */}
+      {limits.map((l) => (
+        <Metric key={l.kind} limit={l} />
       ))}
     </>
   );
@@ -139,4 +155,4 @@ const LABELS: Record<ProviderKey, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   glm: 'GLM',
-};;
+};
