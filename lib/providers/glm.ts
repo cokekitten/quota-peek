@@ -7,6 +7,7 @@ const LEVEL_LABEL: Record<string, string> = { lite: 'Lite', pro: 'Pro', max: 'Ma
 
 interface GlmLimit {
   type?: string;
+  unit?: number; // window-type code: 3 = 5h window, 6 = weekly
   percentage?: number;
   nextResetTime?: number;
 }
@@ -75,15 +76,16 @@ export async function fetchGlmUsage(): Promise<ProviderResult> {
   }
 }
 
-/** Keep only the 5h + weekly token windows; standardize their labels. */
+/** Keep only the 5h + weekly token windows; classify by the `unit` code.
+ *  GLM's `unit` field is the authoritative window type (3 = 5h, 6 = weekly).
+ *  We deliberately do NOT infer the window from nextResetTime — a weekly window
+ *  can reset in under an hour when it's near its end, so reset time does not
+ *  tell you the window length. */
 function summarize(d?: GlmData): { level: string | null; planLabel: string; limits: UsageLimit[] } {
   const level = d?.level ? LEVEL_LABEL[d.level] || d.level : null;
-  const now = Date.now();
   const limits = (d?.limits || [])
-    .filter((l): l is GlmLimit & { nextResetTime: number; type: string } =>
-      l.type === 'TOKENS_LIMIT' && typeof l.nextResetTime === 'number',
-    )
-    .map((l) => normalizeLimit(l, now))
+    .filter((l) => l.type === 'TOKENS_LIMIT')
+    .map(normalizeLimit)
     .filter((l): l is UsageLimit => l !== null);
   return {
     level: level ?? null,
@@ -92,23 +94,23 @@ function summarize(d?: GlmData): { level: string | null; planLabel: string; limi
   };
 }
 
-function normalizeLimit(l: GlmLimit & { nextResetTime: number }, now: number): UsageLimit | null {
-  const period = periodLabel(l.nextResetTime - now);
-  if (period !== '5h window' && period !== 'weekly') return null;
+function normalizeLimit(l: GlmLimit): UsageLimit | null {
+  const kind = classifyUnit(l.unit);
+  if (!kind) return null;
   const out: UsageLimit = {
-    label: period === '5h window' ? '5h Window' : 'Weekly',
-    kind: period === '5h window' ? '5h' : 'weekly',
+    label: kind === '5h' ? '5h Window' : 'Weekly',
+    kind,
     percent: typeof l.percentage === 'number' ? l.percentage : 0,
   };
-  out.resetAt = new Date(l.nextResetTime).toISOString();
+  if (typeof l.nextResetTime === 'number') {
+    out.resetAt = new Date(l.nextResetTime).toISOString();
+  }
   return out;
 }
 
-/** Derive a human period label from a reset delta (ms). */
-function periodLabel(deltaMs: number): string {
-  const h = deltaMs / 3_600_000;
-  if (h <= 12) return '5h window';
-  if (h <= 8 * 24) return 'weekly';
-  if (h <= 35 * 24) return 'monthly';
-  return `~${Math.round(h / 24)}d`;
+/** Map GLM's `unit` code to our window kind. */
+function classifyUnit(unit?: number): '5h' | 'weekly' | null {
+  if (unit === 3) return '5h';
+  if (unit === 6) return 'weekly';
+  return null;
 }

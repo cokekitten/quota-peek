@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { ProviderKey, ProviderResponse, ProviderResult } from './types';
+import type { ProviderKey, ProviderResponse, ProviderResult, UsageLimit } from './types';
 
 interface Props {
   provider: ProviderKey;
@@ -9,11 +9,18 @@ interface Props {
   refreshKey: number;
 }
 
+// Fixed two-slot layout — always rendered, so the card never collapses or
+// shifts when data arrives or a window is missing from the provider response.
+const SLOTS = [
+  { kind: '5h', label: '5h Window' },
+  { kind: 'weekly', label: 'Weekly' },
+] as const;
+
 type State =
-  // Initial load only — no data yet, show the loading card.
+  // First load only — no data yet. We still render the two bars (at 0%).
   | { status: 'loading' }
   // Have data. `refreshing` is true while a background refetch is in flight;
-  // the old data stays visible (bars + countdowns) and is swapped in place.
+  // the old data stays visible and is swapped in place.
   | { status: 'ready'; data: ProviderResult; at: string; refreshing: boolean }
   // Initial fetch failed with no data to fall back on.
   | { status: 'error'; message: string };
@@ -25,8 +32,6 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
 
   useEffect(() => {
     const id = ++reqId.current;
-    // Only show the full loading screen on the very first load. On refresh,
-    // keep the existing data visible and just flag that we're refreshing.
     setState((prev) =>
       prev.status === 'ready' ? { ...prev, refreshing: true } : { status: 'loading' },
     );
@@ -43,92 +48,84 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
       .catch((err: unknown) => {
         if (id !== reqId.current) return; // stale
         const message = err instanceof Error ? err.message : String(err);
-        // If we already have data, keep it (the next refresh will retry) instead
-        // of flipping the whole card to an error state.
         setState((prev) =>
           prev.status === 'ready' ? { ...prev, refreshing: false } : { status: 'error', message },
         );
       });
   }, [provider, refreshKey]);
 
-  return <div className={`card ${state.status}`}>{renderBody(provider, state)}</div>;
-}
-
-function renderBody(provider: ProviderKey, state: State) {
   const label = LABELS[provider];
 
-  if (state.status === 'loading') {
-    return (
-      <>
-        <div className="card-head">
-          <span className="label">{label}</span>
-          <span className="tag">
-            <span className="spinner" />
-            loading
-          </span>
-        </div>
-        <div className="text-note">Fetching…</div>
-      </>
-    );
-  }
-
+  // Genuine error with no prior data → offline card.
   if (state.status === 'error') {
     return (
-      <>
+      <div className="card error">
         <div className="card-head">
           <span className="label">{label}</span>
           <span className="tag">offline</span>
         </div>
         <div className="text-note">{state.message}</div>
-      </>
+      </div>
     );
   }
 
-  const { data, at, refreshing } = state;
-  const limits = data.summary?.limits ?? [];
-  const planLabel = data.summary?.planLabel;
+  const loading = state.status === 'loading';
+  const refreshing = state.status === 'ready' && state.refreshing;
+  const busy = loading || refreshing;
+  const limits = state.status === 'ready' ? state.data.summary?.limits ?? [] : [];
+  const at = state.status === 'ready' ? state.at : null;
+  const planLabel = state.status === 'ready' ? (state.data.summary?.planLabel ?? undefined) : undefined;
+  const stale = state.status === 'ready' && !!state.data.stale;
 
   return (
-    <>
+    <div className={`card${loading ? ' loading' : ''}`}>
       <div className="card-head">
         <span className="label">{label}</span>
         <span className="head-right">
-          {refreshing ? (
-            <span className="spinner" title="refreshing" />
-          ) : (
+          {busy ? (
+            <span className="spinner" title={loading ? 'loading' : 'refreshing'} />
+          ) : at ? (
             <span className="updated">{new Date(at).toLocaleTimeString()}</span>
-          )}
-          <span className={data.stale ? 'tag stale' : 'tag'}>
-            {data.stale ? 'cached' : planLabel || 'live'}
+          ) : null}
+          <span className={stale ? 'tag stale' : 'tag'}>
+            {loading ? '—' : stale ? 'cached' : planLabel || 'live'}
           </span>
         </span>
       </div>
-      {/* key by kind (always '5h' + 'weekly') so React updates bars in place
-          rather than remounting — the width transitions smoothly via CSS. */}
-      {limits.map((l) => (
-        <Metric key={l.kind} limit={l} />
-      ))}
-    </>
+      {SLOTS.map((slot) => {
+        // Match by kind; a window missing from the response renders at 0%.
+        const limit = limits.find((l) => l.kind === slot.kind);
+        return <Metric key={slot.kind} label={slot.label} limit={limit} dim={busy} />;
+      })}
+    </div>
   );
 }
 
-function Metric({ limit }: { limit: NonNullable<ProviderResult['summary']>['limits'][number] }) {
-  const p = Math.max(0, Math.min(100, limit.percent));
+function Metric({
+  label,
+  limit,
+  dim,
+}: {
+  label: string;
+  limit?: UsageLimit;
+  dim?: boolean;
+}) {
+  const p = limit ? Math.max(0, Math.min(100, limit.percent)) : 0;
   const color = p >= 90 ? 'var(--red)' : p >= 70 ? 'var(--yellow)' : 'var(--green)';
-  const reset = limit.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
+  const reset = limit?.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
 
   return (
     <div className="metric">
       <div className="k">
-        <span>{limit.label}</span>
+        <span>{label}</span>
         <span className="v">{p}%</span>
       </div>
       <div className="bar">
-        <span style={{ width: `${p}%`, background: color }} />
+        <span style={{ width: `${p}%`, background: color, opacity: dim ? 0.4 : 1 }} />
       </div>
       {reset && (
         <div className="meta">
-          <span className="reset" title={limit.resetAt}>
+          <span className="reset" title={limit!.resetAt}>
             {reset}
           </span>
         </div>
