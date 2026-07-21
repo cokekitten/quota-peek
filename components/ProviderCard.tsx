@@ -9,15 +9,20 @@ interface Props {
   refreshKey: number;
 }
 
-// Fixed two-slot layout — always rendered, so the card never collapses or
-// shifts when data arrives or a window is missing from the provider response.
-const SLOTS = [
-  { kind: '5h', label: '5h Window' },
-  { kind: 'weekly', label: 'Weekly' },
-] as const;
+// Slots per provider. Most providers report 5h + Weekly windows.
+// Codex and SuperGrok only have a single weekly window now.
+const getSlots = (provider: ProviderKey) => {
+  if (provider === 'supergrok' || provider === 'codex') {
+    return [{ kind: 'weekly', label: 'Weekly' }] as const;
+  }
+  return [
+    { kind: '5h', label: '5h Window' },
+    { kind: 'weekly', label: 'Weekly' },
+  ] as const;
+};
 
 type State =
-  // First load only — no data yet. We still render the two bars (at 0%).
+  // First load only — no data yet. We render the provider's configured slots (at 0%).
   | { status: 'loading' }
   // Have data. `refreshing` is true while a background refetch is in flight;
   // the old data stays visible and is swapped in place.
@@ -92,7 +97,7 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
           </span>
         </span>
       </div>
-      {SLOTS.map((slot) => {
+      {getSlots(provider).map((slot) => {
         // Match by kind; a window missing from the response renders at 0%.
         const limit = limits.find((l) => l.kind === slot.kind);
         return <Metric key={slot.kind} label={slot.label} limit={limit} dim={busy} />;
@@ -152,4 +157,7 @@ const LABELS: Record<ProviderKey, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   glm: 'GLM',
+  supergrok: 'SuperGrok',
+  minimax: 'MiniMax',
+  kimi: 'Kimi',
 };

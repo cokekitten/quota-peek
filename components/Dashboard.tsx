@@ -86,7 +86,7 @@ export default function Dashboard({ providers }: Props) {
 
       <footer>
         <span>
-          GET <code>/api/usage/[provider]</code> · 3 parallel requests, each card renders
+          GET <code>/api/usage/[provider]</code> · parallel requests, each card renders
           as soon as its provider responds
         </span>
       </footer>

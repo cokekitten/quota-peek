@@ -73,10 +73,12 @@ export async function fetchCodexUsage(): Promise<ProviderResult> {
     }
     const data = (await resp.json()) as CodexResponse;
     const rl = data?.rate_limit || {};
-    const limits: UsageLimit[] = [
-      windowLimit('5h Window', '5h', rl.primary_window),
-      windowLimit('Weekly', 'weekly', rl.secondary_window),
-    ].filter((l): l is UsageLimit => l !== null);
+    // Codex no longer has a fixed 5h window: the API reports whatever windows
+    // exist (currently a single weekly one), so classify each window by its
+    // actual duration instead of assuming primary = 5h / secondary = weekly.
+    const limits: UsageLimit[] = [rl.primary_window, rl.secondary_window]
+      .map((w) => windowLimit(w))
+      .filter((l): l is UsageLimit => l !== null);
 
     const planType = data.plan_type ?? null;
     return {
@@ -101,8 +103,9 @@ export async function fetchCodexUsage(): Promise<ProviderResult> {
 }
 
 /** Map a Codex rate-limit window into the shared limit shape. */
-function windowLimit(label: string, kind: string, w?: CodexWindow): UsageLimit | null {
+function windowLimit(w?: CodexWindow): UsageLimit | null {
   if (!w) return null;
+  const { label, kind } = windowKind(w.limit_window_seconds);
   const out: UsageLimit = {
     label,
     kind,
@@ -110,6 +113,14 @@ function windowLimit(label: string, kind: string, w?: CodexWindow): UsageLimit |
   };
   if (w.reset_at) out.resetAt = new Date(w.reset_at * 1000).toISOString();
   return out;
+}
+
+/** Classify a window by its duration (5h = 18000s, weekly = 604800s). */
+function windowKind(seconds?: number): { label: string; kind: string } {
+  if (typeof seconds === 'number' && seconds >= 86400) {
+    return { label: 'Weekly', kind: 'weekly' };
+  }
+  return { label: '5h Window', kind: '5h' };
 }
 
 /** Capitalize the first letter (e.g. "pro" -> "Pro"). */

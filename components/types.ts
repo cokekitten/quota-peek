@@ -1,7 +1,7 @@
 // Client-side mirror of the API response. Kept minimal and structurally typed
 // so the dashboard can render without importing server types.
 
-export type ProviderKey = 'claude' | 'codex' | 'glm';
+export type ProviderKey = 'claude' | 'codex' | 'glm' | 'supergrok' | 'minimax' | 'kimi';
 
 export interface UsageLimit {
   label: string;

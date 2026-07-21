@@ -1,6 +1,9 @@
 import { fetchClaudeUsage } from './claude';
 import { fetchCodexUsage } from './codex';
 import { fetchGlmUsage } from './glm';
+import { fetchSupergrokUsage } from './supergrok';
+import { fetchMinimaxUsage } from './minimax';
+import { fetchKimiUsage } from './kimi';
 import { PROVIDER_KEYS } from './types';
 import type { ProviderDef, ProviderKey, ProviderResult } from './types';
 
@@ -17,6 +20,9 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
   claude: { key: 'claude', fn: fetchClaudeUsage },
   codex: { key: 'codex', fn: fetchCodexUsage },
   glm: { key: 'glm', fn: fetchGlmUsage },
+  supergrok: { key: 'supergrok', fn: fetchSupergrokUsage },
+  minimax: { key: 'minimax', fn: fetchMinimaxUsage },
+  kimi: { key: 'kimi', fn: fetchKimiUsage },
 };
 
 /** Look up a provider by key. Throws on unknown keys. */

@@ -1,6 +1,6 @@
 /** Shared domain types for quota-peek providers. */
 
-export type ProviderKey = 'claude' | 'codex' | 'glm';
+export type ProviderKey = 'claude' | 'codex' | 'glm' | 'supergrok' | 'minimax' | 'kimi';
 
 export interface UsageLimit {
   /** Human label for the metric, e.g. "Primary · 5h window". */
@@ -53,4 +53,4 @@ export interface ProviderDef {
   fn: () => Promise<ProviderResult>;
 }
 
-export const PROVIDER_KEYS: ProviderKey[] = ['claude', 'codex', 'glm'];
+export const PROVIDER_KEYS: ProviderKey[] = ['claude', 'codex', 'glm', 'supergrok', 'minimax', 'kimi'];
