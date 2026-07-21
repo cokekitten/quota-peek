@@ -81,7 +81,7 @@ export async function fetchGlmUsage(): Promise<ProviderResult> {
  *  We deliberately do NOT infer the window from nextResetTime — a weekly window
  *  can reset in under an hour when it's near its end, so reset time does not
  *  tell you the window length. */
-function summarize(d?: GlmData): { level: string | null; planLabel: string; limits: UsageLimit[] } {
+function summarize(d?: GlmData): { level: string | null; planLabel: string | undefined; limits: UsageLimit[] } {
   const level = d?.level ? LEVEL_LABEL[d.level] || d.level : null;
   const limits = (d?.limits || [])
     .filter((l) => l.type === 'TOKENS_LIMIT')
@@ -89,7 +89,7 @@ function summarize(d?: GlmData): { level: string | null; planLabel: string; limi
     .filter((l): l is UsageLimit => l !== null);
   return {
     level: level ?? null,
-    planLabel: level ? `GLM ${level}` : 'GLM',
+    planLabel: level ?? undefined,
     limits,
   };
 }

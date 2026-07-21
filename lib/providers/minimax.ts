@@ -192,6 +192,6 @@ function inferPlanLabel(raw: MinimaxRemainsResponse): string {
     : undefined;
   const videoTotal =
     (video?.current_interval_total_count ?? 0) + (video?.current_weekly_total_count ?? 0);
-  if (videoTotal > 0) return 'MiniMax Ultra';
-  return 'MiniMax Token Plan';
+  if (videoTotal > 0) return 'Ultra';
+  return 'Token Plan';
 }

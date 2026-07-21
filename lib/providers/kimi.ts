@@ -104,7 +104,7 @@ export async function fetchKimiUsage(): Promise<ProviderResult> {
       provider: 'kimi',
       label: 'Kimi',
       summary: {
-        planLabel: level ? `Kimi ${levelLabel(level)}` : 'Kimi',
+        planLabel: level ? levelLabel(level) : undefined,
         limits,
       },
       raw: data as unknown,

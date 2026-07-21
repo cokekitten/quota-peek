@@ -83,8 +83,9 @@ export async function fetchSupergrokUsage(): Promise<ProviderResult> {
     };
   }
 
-  // 3. Try to also get plan name (best effort).
-  let planLabel = 'SuperGrok';
+  // 3. Try to also get plan name (best effort). The badge shows only the tier
+  // word (e.g. "Heavy") — the card title already says SuperGrok.
+  let planLabel: string | undefined;
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -101,7 +102,8 @@ export async function fetchSupergrokUsage(): Promise<ProviderResult> {
         settings?.subscription ||
         settings?.user?.tier;
       if (typeof tier === 'string' && tier.length > 0) {
-        planLabel = tier.includes('Super') || tier.includes('Heavy') ? tier : `SuperGrok ${tier}`;
+        // "SuperGrok Heavy" -> "Heavy"
+        planLabel = tier.replace(/^super\s*grok\s*/i, '').trim() || undefined;
       }
     }
   } catch {

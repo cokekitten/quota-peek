@@ -163,7 +163,7 @@ async function fetchLive(): Promise<ProviderResult> {
     ok: true,
     provider: 'claude',
     label: 'Claude Code',
-    summary: { planLabel: planName ? `Claude ${planName}` : 'Claude Code', limits },
+    summary: { planLabel: planName ?? undefined, limits },
     raw: data as unknown,
   };
 }

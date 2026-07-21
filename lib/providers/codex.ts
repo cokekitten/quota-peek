@@ -87,7 +87,7 @@ export async function fetchCodexUsage(): Promise<ProviderResult> {
       label: 'Codex',
       summary: {
         plan_type: planType,
-        planLabel: planType ? `Codex ${cap(planType)}` : 'Codex',
+        planLabel: planType ? cap(planType) : undefined,
         limits,
       },
       raw: data as unknown,
