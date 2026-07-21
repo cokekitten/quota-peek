@@ -118,12 +118,20 @@ function Metric({
   const p = limit ? Math.max(0, Math.min(100, limit.percent)) : 0;
   const sev = p >= 90 ? 'crit' : p >= 70 ? 'warn' : 'ok';
   const reset = limit?.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
+  const pace = limit?.resetAt ? paceDelta(limit.kind, p, limit.resetAt) : null;
 
   return (
     <div className="metric">
       <div className="k">
         <span>{label}</span>
-        <span className="v">{p}%</span>
+        <span className="v">
+          {p}%
+          {pace && (
+            <span className={`pace ${pace.cls}`} title={pace.title}>
+              {pace.text}
+            </span>
+          )}
+        </span>
       </div>
       <div className="bar">
         <span className={sev} style={{ width: `${p}%`, opacity: dim ? 0.4 : 1 }} />
@@ -137,6 +145,36 @@ function Metric({
       )}
     </div>
   );
+}
+
+/**
+ * Pace delta: compares actual consumption against even (time-proportional)
+ * consumption. Window length is implied by kind (5h / 7d); with the reset time
+ * we know how much of the window has elapsed, hence the "expected" percent.
+ * Positive delta = burning faster than pace (over), negative = under pace.
+ */
+function paceDelta(
+  kind: string,
+  percent: number,
+  resetAt: string,
+): { text: string; cls: 'over' | 'under' | 'even'; title: string } | null {
+  const duration =
+    kind === '5h' ? 5 * 3600e3 : kind === 'weekly' ? 7 * 24 * 3600e3 : null;
+  if (!duration) return null;
+  const remainMs = new Date(resetAt).getTime() - Date.now();
+  if (!Number.isFinite(remainMs)) return null;
+  const expected = Math.min(100, Math.max(0, (1 - remainMs / duration) * 100));
+  const delta = Math.round(percent - expected);
+  const expectedRound = Math.round(expected);
+  if (delta === 0) {
+    return { text: '±0%', cls: 'even', title: `On pace — ${expectedRound}% expected by elapsed time` };
+  }
+  const cls = delta > 10 ? 'over' : delta < -10 ? 'under' : 'even';
+  return {
+    text: `${delta > 0 ? '+' : ''}${delta}%`,
+    cls,
+    title: `${delta > 0 ? 'Ahead of' : 'Behind'} pace — ${expectedRound}% expected by elapsed time`,
+  };
 }
 
 function fmtRel(iso: string): string {

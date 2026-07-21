@@ -335,6 +335,31 @@ main {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+.metric .k .v .pace {
+  margin-left: 7px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  vertical-align: 1px;
+}
+.pace.over {
+  color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+}
+.pace.under {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+.pace.even {
+  color: var(--muted);
+  background: var(--panel-2);
+}
+/* Theme C is monochrome for bars, but pace is semantic — keep a real green. */
+:root[data-theme='c'] .pace.under {
+  color: #34d399;
+  background: color-mix(in srgb, #34d399 12%, transparent);
+}
 
 .bar {
   height: var(--bar-height);
