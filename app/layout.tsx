@@ -8,7 +8,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Set the saved theme before first paint to avoid a flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('qp-theme');document.documentElement.dataset.theme=t==='c'?'c':'a'}catch(e){}`,
+          }}
+        />
+      </head>
       <body>{children}</body>
     </html>
   );

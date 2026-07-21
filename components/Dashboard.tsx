@@ -14,14 +14,40 @@ const REFOCUS_THRESHOLD = 3 * 60 * 1000; // refresh on tab refocus after 3 min
 export default function Dashboard({ providers }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [auto, setAuto] = useState(false);
+  const [theme, setTheme] = useState<'a' | 'c'>('a');
+  const [updatedAt, setUpdatedAt] = useState(() => new Date());
   const autoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   // Timestamp of the last refresh trigger; used to decide whether a refocus
   // should fetch again (only if more than REFOCUS_THRESHOLD has passed).
   const lastRefreshAt = useRef<number>(Date.now());
 
+  // Restore the saved theme on mount (layout.tsx sets the pre-paint default).
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem('qp-theme') === 'c' ? 'c' : 'a';
+      setTheme(t);
+      document.documentElement.dataset.theme = t;
+    } catch {
+      /* storage unavailable — keep default */
+    }
+  }, []);
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === 'a' ? 'c' : 'a';
+      document.documentElement.dataset.theme = next;
+      try {
+        localStorage.setItem('qp-theme', next);
+      } catch {
+        /* non-fatal */
+      }
+      return next;
+    });
+  }, []);
+
   const refresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
     lastRefreshAt.current = Date.now();
+    setUpdatedAt(new Date());
   }, []);
 
   useEffect(() => {
@@ -60,19 +86,35 @@ export default function Dashboard({ providers }: Props) {
     <>
       <header className="header">
         <div className="brand">
+          <span className="logo">Q</span>
           <h1>Quota Peek</h1>
           <span className="sub">AI coding plan usage</span>
         </div>
         <div className="controls">
-          <label className="auto">
+          <span className="pill">
+            <span className="dot" />
+            {providers.length} providers ·{' '}
+            {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+          <label className="pill auto">
             <input
               type="checkbox"
               checked={auto}
               onChange={(e) => setAuto(e.target.checked)}
             />
-            Auto (10m)
+            Auto 10m
           </label>
-          <button onClick={refresh}>Refresh</button>
+          <button className="refresh" onClick={refresh}>
+            Refresh
+          </button>
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            title={theme === 'a' ? 'Switch to minimal theme' : 'Switch to aurora theme'}
+            aria-label="Toggle theme"
+          >
+            {theme === 'a' ? '◐' : '◑'}
+          </button>
         </div>
       </header>
 

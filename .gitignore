@@ -9,3 +9,6 @@ dist/
 .DS_Store
 next-env.d.ts
 *.tsbuildinfo
+
+# Brainstorm/visual-companion session files
+.superpowers/

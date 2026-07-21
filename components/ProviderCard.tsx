@@ -116,7 +116,7 @@ function Metric({
   dim?: boolean;
 }) {
   const p = limit ? Math.max(0, Math.min(100, limit.percent)) : 0;
-  const color = p >= 90 ? 'var(--red)' : p >= 70 ? 'var(--yellow)' : 'var(--green)';
+  const sev = p >= 90 ? 'crit' : p >= 70 ? 'warn' : 'ok';
   const reset = limit?.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
 
   return (
@@ -126,7 +126,7 @@ function Metric({
         <span className="v">{p}%</span>
       </div>
       <div className="bar">
-        <span style={{ width: `${p}%`, background: color, opacity: dim ? 0.4 : 1 }} />
+        <span className={sev} style={{ width: `${p}%`, opacity: dim ? 0.4 : 1 }} />
       </div>
       {reset && (
         <div className="meta">
