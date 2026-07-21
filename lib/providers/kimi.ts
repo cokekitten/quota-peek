@@ -197,8 +197,22 @@ function quotaLimit(q: KimiQuota | undefined, label: string, kind: string): Usag
   return out;
 }
 
-/** "LEVEL_ADVANCED" -> "Advanced". */
+/**
+ * Map the API's membership LEVEL_* enum to Kimi's consumer (tempo) plan names.
+ * Live-observed anchors: LEVEL_BASIC = Moderato, LEVEL_INTERMEDIATE = Allegretto,
+ * LEVEL_ADVANCED = Allegro; LEVEL_PREMIUM = Vivace is community consensus.
+ * Unknown values fall back to the raw word ("LEVEL_X" -> "X").
+ */
+const LEVEL_PLAN: Record<string, string> = {
+  LEVEL_FREE: 'Adagio',
+  LEVEL_BASIC: 'Moderato',
+  LEVEL_INTERMEDIATE: 'Allegretto',
+  LEVEL_ADVANCED: 'Allegro',
+  LEVEL_PREMIUM: 'Vivace',
+};
+
 function levelLabel(level: string): string {
+  if (LEVEL_PLAN[level]) return LEVEL_PLAN[level];
   const s = level.replace(/^LEVEL_/, '').toLowerCase();
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : level;
 }

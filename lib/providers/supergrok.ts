@@ -94,7 +94,12 @@ export async function fetchSupergrokUsage(): Promise<ProviderResult> {
     }).finally(() => clearTimeout(timer));
     if (sresp.ok) {
       const settings = await sresp.json();
-      const tier = settings?.tier || settings?.plan || settings?.subscription || settings?.user?.tier;
+      const tier =
+        settings?.subscription_tier_display ||
+        settings?.tier ||
+        settings?.plan ||
+        settings?.subscription ||
+        settings?.user?.tier;
       if (typeof tier === 'string' && tier.length > 0) {
         planLabel = tier.includes('Super') || tier.includes('Heavy') ? tier : `SuperGrok ${tier}`;
       }

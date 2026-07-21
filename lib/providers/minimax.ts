@@ -160,7 +160,7 @@ export async function fetchMinimaxUsage(): Promise<ProviderResult> {
       provider: 'minimax',
       label: 'MiniMax',
       summary: {
-        planLabel: 'MiniMax Token Plan',
+        planLabel: process.env.MINIMAX_PLAN_LABEL || inferPlanLabel(raw),
         limits,
       },
       raw: raw as unknown,
@@ -178,4 +178,20 @@ export async function fetchMinimaxUsage(): Promise<ProviderResult> {
 function clampPercent(v: number): number {
   if (!Number.isFinite(v)) return 0;
   return Math.max(0, Math.min(100, Math.round(v)));
+}
+
+/**
+ * The remains endpoint exposes no tier field. The only reliable in-payload
+ * signal: Ultra is the sole tier that ships video generations (5/day), so a
+ * video bucket with non-zero totals implies Ultra. Everything else stays
+ * generic — set MINIMAX_PLAN_LABEL to override.
+ */
+function inferPlanLabel(raw: MinimaxRemainsResponse): string {
+  const video = Array.isArray(raw.model_remains)
+    ? raw.model_remains.find((m) => m.model_name === 'video')
+    : undefined;
+  const videoTotal =
+    (video?.current_interval_total_count ?? 0) + (video?.current_weekly_total_count ?? 0);
+  if (videoTotal > 0) return 'MiniMax Ultra';
+  return 'MiniMax Token Plan';
 }
