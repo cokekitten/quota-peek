@@ -344,19 +344,19 @@ main {
   vertical-align: 1px;
 }
 .pace.over {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.pace.under {
   color: var(--yellow);
   background: color-mix(in srgb, var(--yellow) 12%, transparent);
 }
-.pace.under {
+.pace.even {
   color: var(--green);
   background: color-mix(in srgb, var(--green) 12%, transparent);
 }
-.pace.even {
-  color: var(--muted);
-  background: var(--panel-2);
-}
 /* Theme C is monochrome for bars, but pace is semantic — keep a real green. */
-:root[data-theme='c'] .pace.under {
+:root[data-theme='c'] .pace.even {
   color: #34d399;
   background: color-mix(in srgb, #34d399 12%, transparent);
 }
