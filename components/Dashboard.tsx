@@ -93,17 +93,18 @@ export default function Dashboard({ providers }: Props) {
         <div className="controls">
           <span className="pill">
             <span className="dot" />
-            {providers.length} providers ·{' '}
+            {providers.length}
+            <span className="pill-word">&nbsp;providers</span> ·{' '}
             {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
-          <label className="pill auto">
-            <input
-              type="checkbox"
-              checked={auto}
-              onChange={(e) => setAuto(e.target.checked)}
-            />
+          <button
+            className={`pill auto${auto ? ' on' : ''}`}
+            onClick={() => setAuto((a) => !a)}
+            title={auto ? 'Auto-refresh on (10m) — click to turn off' : 'Auto-refresh off — click to turn on'}
+          >
+            <span className="dot" />
             Auto 10m
-          </label>
+          </button>
           <button className="refresh" onClick={refresh}>
             Refresh
           </button>

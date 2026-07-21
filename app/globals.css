@@ -155,11 +155,13 @@ footer {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .pill {
   display: flex;
   align-items: center;
   gap: 7px;
+  height: 30px;
   font-size: 11px;
   color: var(--muted);
   padding: 5px 12px;
@@ -167,6 +169,7 @@ footer {
   background: var(--panel-2);
   border: 1px solid var(--border);
   user-select: none;
+  white-space: nowrap;
 }
 .pill .dot {
   width: 6px;
@@ -174,25 +177,37 @@ footer {
   border-radius: 50%;
   background: var(--green);
   box-shadow: var(--bar-glow);
+  flex: 0 0 auto;
 }
 .pill.auto {
   cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  appearance: none;
 }
-.pill.auto input {
-  cursor: pointer;
-  margin: 0;
-  accent-color: var(--accent);
+.pill.auto .dot {
+  background: var(--muted);
+  box-shadow: none;
+}
+.pill.auto.on {
+  color: var(--text);
+}
+.pill.auto.on .dot {
+  background: var(--green);
+  box-shadow: var(--bar-glow);
 }
 
 button.refresh {
   background: var(--btn-bg);
   color: var(--btn-color);
   border: none;
-  padding: 7px 16px;
+  height: 30px;
+  padding: 0 16px;
   border-radius: 999px;
   font-weight: 600;
   cursor: pointer;
   font-size: 12px;
+  white-space: nowrap;
 }
 button.refresh:hover:not(:disabled) {
   filter: brightness(1.1);
@@ -205,6 +220,7 @@ button.refresh:disabled {
 .theme-toggle {
   width: 30px;
   height: 30px;
+  flex: 0 0 auto;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -413,6 +429,22 @@ footer {
   color: var(--muted);
   font-size: 12px;
   text-align: center;
+}
+
+/* Narrow screens: tighten header, drop the subtitle and the "providers" word. */
+@media (max-width: 560px) {
+  .header {
+    padding: 12px 16px;
+  }
+  .brand .sub {
+    display: none;
+  }
+  .pill .pill-word {
+    display: none;
+  }
+  main {
+    padding: 16px;
+  }
 }
 code {
   background: var(--panel-2);
