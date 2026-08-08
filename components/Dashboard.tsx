@@ -91,10 +91,9 @@ export default function Dashboard({ providers }: Props) {
           <span className="sub">AI coding plan usage</span>
         </div>
         <div className="controls">
-          <span className="pill">
+          <span className="pill" title={`${providers.length} providers`}>
             <span className="dot" />
-            {providers.length}
-            <span className="pill-word">&nbsp;providers</span> ·{' '}
+            {providers.length} ·{' '}
             {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
           <button

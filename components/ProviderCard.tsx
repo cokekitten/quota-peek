@@ -148,7 +148,7 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
               : stale
                 ? 'cached'
                 : multi && !accountView
-                  ? `${accounts.length} accounts${partial ? ' ⚠' : ''}`
+                  ? `×${accounts.length}${partial ? ' ⚠' : ''}`
                   : planLabel || 'live'}
           </span>
         </span>
