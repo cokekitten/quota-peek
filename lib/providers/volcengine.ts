@@ -3,40 +3,67 @@ import type { ProviderResult, UsageLimit } from './types';
 import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accounts';
 
 /**
- * Volcengine Ark Coding Plan (火山方舟) usage via the control-plane
- * GetAFPUsage API: POST ark.cn-beijing.volcengineapi.com with an empty body,
- * signed with the account's AK/SK using Volcengine's HMAC-SHA256 V4 scheme
+ * Volcengine Ark Coding Plan (火山方舟) usage via the control plane, signed
+ * with the account's AK/SK using Volcengine's HMAC-SHA256 V4 scheme
  * (AWS SigV4-style: kSigning = HMAC(HMAC(HMAC(HMAC(SK, date), region),
  * service), "request")).
  *
- * Returns PlanType (Small/Medium/Large/Max) plus four quota windows —
- * five-hour / daily / weekly / monthly, each { Quota, Used, SubscribeTime,
- * ResetTime }. The card renders the 5h + weekly slots; the full response is
- * kept in `raw`. Extra accounts: VOLC_ACCESS_KEY_2 / VOLC_SECRET_KEY_2, …
+ * Two usage actions, tried in order:
+ * 1. GetCodingPlanUsage — the current Coding Plan product: { Status,
+ *    QuotaUsage: [{ Level: session|weekly|monthly, Percent, ResetTimestamp,
+ *    Cap }] }. Percent-based only (Cap is a % scale), so multi-account merges
+ *    are means flagged ≈ estimated.
+ * 2. GetAFPUsage — the older Agent Plan product: PlanType plus { Quota, Used,
+ *    ResetTime } per window (absolute numbers → exact merges). Used as a
+ *    fallback when the account's plan predates GetCodingPlanUsage
+ *    (InvalidActionOrVersion) or returns nothing.
+ *
+ * The card renders the 5h + weekly slots; monthly rides along in summary.
+ * Extra accounts: VOLC_ACCESS_KEY_2 / VOLC_SECRET_KEY_2, …
  */
 
 const HOST = process.env.VOLC_HOST || 'ark.cn-beijing.volcengineapi.com';
 const REGION = process.env.VOLC_REGION || 'cn-beijing';
 const SERVICE = 'ark';
 const API_VERSION = '2024-01-01';
-const ACTION = 'GetAFPUsage';
 const TIMEOUT_MS = Number(process.env.VOLC_TIMEOUT_MS || 15000);
 
-interface VolcQuota {
+interface VolcError {
+  Code?: string;
+  Message?: string;
+}
+
+interface CodingPlanQuota {
+  Level?: string;
+  Percent?: number;
+  ResetTimestamp?: number;
+  Cap?: number;
+}
+
+interface CodingPlanResponse {
+  ResponseMetadata?: { Error?: VolcError };
+  Result?: {
+    Status?: string;
+    UpdateTimestamp?: number;
+    QuotaUsage?: CodingPlanQuota[];
+  };
+}
+
+interface AfpQuota {
   Quota?: number;
   Used?: number;
   SubscribeTime?: number;
   ResetTime?: number;
 }
 
-interface VolcUsageResponse {
-  ResponseMetadata?: { Error?: { Code?: string; Message?: string } };
+interface AfpUsageResponse {
+  ResponseMetadata?: { Error?: VolcError };
   Result?: {
     PlanType?: string;
-    AFPFiveHour?: VolcQuota;
-    AFPDaily?: VolcQuota;
-    AFPWeekly?: VolcQuota;
-    AFPMonthly?: VolcQuota;
+    AFPFiveHour?: AfpQuota;
+    AFPDaily?: AfpQuota;
+    AFPWeekly?: AfpQuota;
+    AFPMonthly?: AfpQuota;
   };
 }
 
@@ -77,33 +104,73 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
     };
   }
 
-  try {
-    const body = '{}';
-    const headers = signVolcRequest({
-      accessKey: account.accessKey,
-      secretKey: account.secretKey,
-      host: HOST,
-      region: REGION,
-      service: SERVICE,
-      action: ACTION,
-      version: API_VERSION,
-      body,
-    });
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    const resp = await fetch(`https://${HOST}/?Action=${ACTION}&Version=${API_VERSION}`, {
-      method: 'POST',
-      headers,
-      body,
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
-
-    if (!resp.ok) {
-      return { ok: false, provider, label, error: `HTTP ${resp.status} ${resp.statusText}` };
+  const call = async (action: string): Promise<{ json: any } | { error: string }> => {
+    try {
+      const body = '{}';
+      const headers = signVolcRequest({
+        accessKey: account.accessKey!,
+        secretKey: account.secretKey!,
+        host: HOST,
+        region: REGION,
+        service: SERVICE,
+        action,
+        version: API_VERSION,
+        body,
+      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      const resp = await fetch(`https://${HOST}/?Action=${action}&Version=${API_VERSION}`, {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
+      if (!resp.ok) return { error: `HTTP ${resp.status} ${resp.statusText}` };
+      return { json: await resp.json() };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
     }
+  };
 
-    const data = (await resp.json()) as VolcUsageResponse;
+  // 1) Current Coding Plan product.
+  const coding = await call('GetCodingPlanUsage');
+  if ('json' in coding) {
+    const data = coding.json as CodingPlanResponse;
+    const apiErr = data.ResponseMetadata?.Error;
+    const usage = data.Result?.QuotaUsage ?? [];
+    if (!apiErr?.Code && usage.length > 0) {
+      const limits: UsageLimit[] = [];
+      let monthly: CodingPlanQuota | null = null;
+      for (const q of usage) {
+        if (typeof q.Percent !== 'number') continue;
+        const percent = Math.max(0, Math.min(100, Math.round(q.Percent)));
+        const resetAt = q.ResetTimestamp ? new Date(q.ResetTimestamp * 1000).toISOString() : undefined;
+        if (q.Level === 'session') limits.push({ label: '5h Window', kind: '5h', percent, resetAt });
+        else if (q.Level === 'weekly') limits.push({ label: 'Weekly', kind: 'weekly', percent, resetAt });
+        else if (q.Level === 'monthly') monthly = q;
+      }
+      return {
+        ok: true,
+        provider,
+        label,
+        summary: {
+          // GetCodingPlanUsage exposes no tier name — status is the only signal.
+          planLabel: 'Coding Plan',
+          limits,
+          monthly,
+        },
+        raw: data as unknown,
+      };
+    }
+    // InvalidActionOrVersion → account's plan predates this action; fall
+    // through to the AFP product. Any other error also falls through so the
+    // fallback gets its say before we give up.
+  }
+
+  // 2) Older Agent Plan product (absolute quota numbers).
+  const afp = await call('GetAFPUsage');
+  if ('json' in afp) {
+    const data = afp.json as AfpUsageResponse;
     const apiErr = data.ResponseMetadata?.Error;
     if (apiErr?.Code) {
       return {
@@ -114,50 +181,41 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
         raw: data as unknown,
       };
     }
-
     const result = data.Result;
-    if (!result?.PlanType) {
-      // Signed request succeeded, but this account carries no Coding Plan.
+    if (result?.PlanType) {
+      const limits: UsageLimit[] = [];
+      const fiveHour = afpQuotaLimit(result.AFPFiveHour, '5h Window', '5h');
+      if (fiveHour) limits.push(fiveHour);
+      const weekly = afpQuotaLimit(result.AFPWeekly, 'Weekly', 'weekly');
+      if (weekly) limits.push(weekly);
       return {
-        ok: false,
+        ok: true,
         provider,
         label,
-        error: 'No Coding Plan subscription on this account (PlanType empty)',
+        summary: {
+          planLabel: result.PlanType,
+          limits,
+          daily: result.AFPDaily ?? null,
+          monthly: result.AFPMonthly ?? null,
+        },
         raw: data as unknown,
       };
     }
-
-    const limits: UsageLimit[] = [];
-    const fiveHour = quotaLimit(result.AFPFiveHour, '5h Window', '5h');
-    if (fiveHour) limits.push(fiveHour);
-    const weekly = quotaLimit(result.AFPWeekly, 'Weekly', 'weekly');
-    if (weekly) limits.push(weekly);
-
-    return {
-      ok: true,
-      provider,
-      label,
-      summary: {
-        planLabel: result.PlanType,
-        limits,
-        // Daily/monthly windows ride along for future UI; raw has everything.
-        daily: result.AFPDaily ?? null,
-        monthly: result.AFPMonthly ?? null,
-      },
-      raw: data as unknown,
-    };
-  } catch (err) {
+    // Signed request succeeded, but this account carries no plan on either API.
     return {
       ok: false,
       provider,
       label,
-      error: err instanceof Error ? err.message : String(err),
+      error: 'No Coding Plan subscription on this account',
+      raw: data as unknown,
     };
   }
+
+  return { ok: false, provider, label, error: afp.error ?? ('error' in coding ? coding.error : 'unknown') };
 }
 
-/** Map { Quota, Used, ResetTime } into a UsageLimit (absolute numbers → exact merges). */
-function quotaLimit(q: VolcQuota | undefined, label: string, kind: string): UsageLimit | null {
+/** Map AFP { Quota, Used, ResetTime } into a UsageLimit (absolute → exact merges). */
+function afpQuotaLimit(q: AfpQuota | undefined, label: string, kind: string): UsageLimit | null {
   if (!q) return null;
   const total = Number(q.Quota);
   const used = Number(q.Used);

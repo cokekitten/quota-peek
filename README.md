@@ -121,7 +121,7 @@ docker compose up -d --build
 | **SuperGrok** | OAuth token from `~/.grok/auth.json` (via `grok login`) + internal `cli-chat-proxy.grok.com/v1/billing` | Just run the official Grok CLI (`grok login`) once with an active SuperGrok subscription. Nothing else to configure. |
 | **MiniMax** (国内) | Subscription Key (Token Plan) via `Authorization: Bearer` to `https://www.minimaxi.com/v1/token_plan/remains` | Set `MINIMAX_API_KEY` to your Token Plan Subscription Key from minimaxi.com. Defaults to domestic endpoint. |
 | **Kimi** | OAuth credentials from `~/.kimi-code/credentials/kimi-code.json` (auto-refreshed) → `api.kimi.com/coding/v1/usages`, or a Console API Key | Just be logged in via the Kimi Code CLI. Or set `KIMI_API_KEY` to an API Key from the Kimi Code Console. |
-| **Volcengine** (火山方舟) | AK/SK-signed (HMAC-SHA256 V4) `GetAFPUsage` on the Ark control plane | Set `VOLC_ACCESS_KEY` / `VOLC_SECRET_KEY` from 火山引擎控制台 → 密钥管理. Returns PlanType + 5h/daily/weekly/monthly windows (5h + weekly shown). |
+| **Volcengine** (火山方舟) | AK/SK-signed (HMAC-SHA256 V4) `GetCodingPlanUsage` on the Ark control plane (falls back to `GetAFPUsage` for older Agent Plans) | Set `VOLC_ACCESS_KEY` / `VOLC_SECRET_KEY` from 火山引擎控制台 → 密钥管理. Session(5h)/weekly/monthly windows (5h + weekly shown). |
 
 A provider that isn't set up returns `ok: false` with a helpful `error` message — it shows an offline card and never breaks the others.
 
