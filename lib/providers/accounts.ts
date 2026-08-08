@@ -182,6 +182,9 @@ export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
 const KIND_DURATION_MS: Record<string, number> = {
   '5h': 5 * 3600e3,
   weekly: 7 * 24 * 3600e3,
+  // Monthly windows are billing-cycle anchored (not calendar months) and the
+  // APIs don't expose the window start — 30d is the closest uniform estimate.
+  monthly: 30 * 24 * 3600e3,
 };
 
 function clampPercent(v: number): number {

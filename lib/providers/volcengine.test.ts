@@ -14,6 +14,8 @@ afterEach(() => {
   setEnv('VOLC_SECRET_KEY');
   setEnv('VOLC_ACCESS_KEY_2');
   setEnv('VOLC_SECRET_KEY_2');
+  setEnv('VOLC_PLAN_LABEL');
+  setEnv('VOLC_PLAN_LABEL_2');
   vi.unstubAllGlobals();
 });
 
@@ -109,6 +111,15 @@ describe('fetchVolcengineUsage', () => {
     const monthly = result.summary?.limits.find((l) => l.kind === 'monthly')!;
     expect(monthly.percent).toBe(8);
     expect(monthly.resetAt).toBe(new Date(1788537599 * 1000).toISOString());
+  });
+
+  it('honors VOLC_PLAN_LABEL as the tier name (the API returns none)', async () => {
+    setEnv('VOLC_ACCESS_KEY', AK);
+    setEnv('VOLC_SECRET_KEY', SK);
+    setEnv('VOLC_PLAN_LABEL', 'Pro');
+    mockByAction({ GetCodingPlanUsage: CODING_PLAN_RESULT });
+    const result = await fetchVolcengineUsage();
+    expect(result.summary?.planLabel).toBe('Pro');
   });
 
   it('falls back to GetAFPUsage when the plan predates GetCodingPlanUsage', async () => {

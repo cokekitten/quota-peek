@@ -240,7 +240,13 @@ function paceDelta(
   resetAt: string,
 ): { text: string; cls: 'over' | 'under' | 'even'; title: string } | null {
   const duration =
-    kind === '5h' ? 5 * 3600e3 : kind === 'weekly' ? 7 * 24 * 3600e3 : null;
+    kind === '5h'
+      ? 5 * 3600e3
+      : kind === 'weekly'
+        ? 7 * 24 * 3600e3
+        : kind === 'monthly'
+          ? 30 * 24 * 3600e3 // billing-cycle anchored; start unknown → 30d estimate
+          : null;
   if (!duration) return null;
   const remainMs = new Date(resetAt).getTime() - Date.now();
   if (!Number.isFinite(remainMs)) return null;

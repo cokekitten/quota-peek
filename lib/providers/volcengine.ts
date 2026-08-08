@@ -72,11 +72,14 @@ interface VolcAccount {
   secretKey?: string;
   akEnv: string;
   skEnv: string;
+  /** The usage APIs return no tier name — override via VOLC_PLAN_LABEL(_N). */
+  planLabel?: string;
 }
 
 export function fetchVolcengineUsage(): Promise<ProviderResult> {
   const accounts = readIndexedAccounts({
-    vars: ['VOLC_ACCESS_KEY', 'VOLC_SECRET_KEY'],
+    vars: ['VOLC_ACCESS_KEY', 'VOLC_SECRET_KEY', 'VOLC_PLAN_LABEL'],
+    triggerVars: ['VOLC_ACCESS_KEY', 'VOLC_SECRET_KEY'],
   }).map(({ key, env }) => ({
     key,
     config: {
@@ -84,6 +87,7 @@ export function fetchVolcengineUsage(): Promise<ProviderResult> {
       secretKey: env.VOLC_SECRET_KEY,
       akEnv: accountEnvName('VOLC_ACCESS_KEY', key),
       skEnv: accountEnvName('VOLC_SECRET_KEY', key),
+      planLabel: env.VOLC_PLAN_LABEL || process.env.VOLC_PLAN_LABEL,
     },
   }));
   return fetchMultiAccount(accounts, fetchVolcAccount, {
@@ -153,8 +157,8 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
         provider,
         label,
         summary: {
-          // GetCodingPlanUsage exposes no tier name — status is the only signal.
-          planLabel: 'Coding Plan',
+          // GetCodingPlanUsage exposes no tier name — env override, else generic.
+          planLabel: account.planLabel || 'Coding Plan',
           limits,
         },
         raw: data as unknown,
@@ -193,7 +197,7 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
         provider,
         label,
         summary: {
-          planLabel: result.PlanType,
+          planLabel: account.planLabel || result.PlanType,
           limits,
           daily: result.AFPDaily ?? null,
           monthly: result.AFPMonthly ?? null,
