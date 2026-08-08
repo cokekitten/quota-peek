@@ -10,12 +10,23 @@ export interface UsageLimit {
   used?: number;
   total?: number;
   resetAt?: string;
+  estimated?: boolean;
   detail?: string;
+}
+
+export interface AccountUsage {
+  key: string;
+  ok: boolean;
+  planLabel?: string;
+  limits: UsageLimit[];
+  error?: string;
 }
 
 export interface ProviderSummary {
   planLabel?: string;
   limits: UsageLimit[];
+  accounts?: AccountUsage[];
+  partial?: boolean;
   [key: string]: unknown;
 }
 

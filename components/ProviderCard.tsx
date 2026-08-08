@@ -32,6 +32,8 @@ type State =
 
 export default function ProviderCard({ provider, refreshKey }: Props) {
   const [state, setState] = useState<State>({ status: 'loading' });
+  /** Selected account tab: 0 = merged view, 1..n = per-account. */
+  const [acct, setAcct] = useState(0);
   // Track the in-flight request so a slow response can't overwrite a newer one.
   const reqId = useRef(0);
 
@@ -74,18 +76,66 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
     );
   }
 
+  // API answered but the provider itself failed → offline card with its error.
+  if (state.status === 'ready' && !state.data.ok) {
+    return (
+      <div className="card error">
+        <div className="card-head">
+          <span className="label">{label}</span>
+          <span className="tag">offline</span>
+        </div>
+        <div className="text-note">{state.data.error || 'unknown error'}</div>
+      </div>
+    );
+  }
+
   const loading = state.status === 'loading';
   const refreshing = state.status === 'ready' && state.refreshing;
   const busy = loading || refreshing;
-  const limits = state.status === 'ready' ? state.data.summary?.limits ?? [] : [];
+  const summary = state.status === 'ready' ? state.data.summary : undefined;
+  // Multi-account is fully data-driven: any provider whose summary carries an
+  // accounts list gets the Σ/1/2 toggle — no per-provider special-casing.
+  const accounts = summary?.accounts;
+  const multi = !!accounts && accounts.length > 1;
+  // Clamp the selection if a refresh shrank the account list.
+  const sel = multi && acct >= 1 && acct <= accounts.length ? acct : 0;
+  const accountView = multi && sel > 0 ? accounts[sel - 1] : null;
+  const limits = accountView ? accountView.limits : summary?.limits ?? [];
   const at = state.status === 'ready' ? state.at : null;
-  const planLabel = state.status === 'ready' ? (state.data.summary?.planLabel ?? undefined) : undefined;
+  const planLabel = accountView ? accountView.planLabel : summary?.planLabel ?? undefined;
   const stale = state.status === 'ready' && !!state.data.stale;
+  const partial = multi && !!summary?.partial;
 
   return (
     <div className={`card${loading ? ' loading' : ''}`}>
       <div className="card-head">
         <span className="label">{label}</span>
+        {multi && (
+          <span className="seg" role="tablist" aria-label="Account">
+            <button
+              className={sel === 0 ? 'on' : ''}
+              onClick={() => setAcct(0)}
+              title="Merged across accounts"
+            >
+              Σ
+            </button>
+            {accounts.map((a, i) => (
+              <button
+                key={a.key}
+                className={sel === i + 1 ? 'on' : ''}
+                onClick={() => setAcct(i + 1)}
+                title={
+                  a.ok
+                    ? `Account ${a.key}${a.planLabel ? ` · ${a.planLabel}` : ''}`
+                    : `Account ${a.key}: ${a.error || 'offline'}`
+                }
+              >
+                {a.key}
+                {!a.ok && '!'}
+              </button>
+            ))}
+          </span>
+        )}
         <span className="head-right">
           {busy ? (
             <span className="spinner" title={loading ? 'loading' : 'refreshing'} />
@@ -93,15 +143,35 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
             <span className="updated">{new Date(at).toLocaleTimeString()}</span>
           ) : null}
           <span className={stale ? 'tag stale' : 'tag'}>
-            {loading ? '—' : stale ? 'cached' : planLabel || 'live'}
+            {loading
+              ? '—'
+              : stale
+                ? 'cached'
+                : multi && !accountView
+                  ? `${accounts.length} accounts${partial ? ' ⚠' : ''}`
+                  : planLabel || 'live'}
           </span>
         </span>
       </div>
-      {getSlots(provider).map((slot) => {
-        // Match by kind; a window missing from the response renders at 0%.
-        const limit = limits.find((l) => l.kind === slot.kind);
-        return <Metric key={slot.kind} label={slot.label} limit={limit} dim={busy} />;
-      })}
+      {accountView && !accountView.ok ? (
+        <div className="text-note">{accountView.error || 'offline'}</div>
+      ) : (
+        getSlots(provider).map((slot) => {
+          // Match by kind; a window missing from the response renders at 0%.
+          const limit = limits.find((l) => l.kind === slot.kind);
+          return (
+            <Metric
+              key={slot.kind}
+              label={slot.label}
+              limit={limit}
+              dim={busy}
+              // Merged rows combine windows with different resets — pace math
+              // would be meaningless. Per-account views keep it.
+              allowPace={!multi || sel > 0}
+            />
+          );
+        })
+      )}
     </div>
   );
 }
@@ -110,21 +180,28 @@ function Metric({
   label,
   limit,
   dim,
+  allowPace = true,
 }: {
   label: string;
   limit?: UsageLimit;
   dim?: boolean;
+  allowPace?: boolean;
 }) {
   const p = limit ? Math.max(0, Math.min(100, limit.percent)) : 0;
   const sev = p >= 90 ? 'crit' : p >= 70 ? 'warn' : 'ok';
   const reset = limit?.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
-  const pace = limit?.resetAt ? paceDelta(limit.kind, p, limit.resetAt) : null;
+  const pace = allowPace && limit?.resetAt ? paceDelta(limit.kind, p, limit.resetAt) : null;
 
   return (
     <div className="metric">
       <div className="k">
         <span>{label}</span>
         <span className="v">
+          {limit?.estimated && (
+            <span className="est" title="Estimated — accounts report percentages only, merged as a mean">
+              ≈
+            </span>
+          )}
           {p}%
           {pace && (
             <span className={`pace ${pace.cls}`} title={pace.title}>

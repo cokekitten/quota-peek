@@ -1,6 +1,7 @@
 import type { ProviderResult, UsageLimit } from './types';
+import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accounts';
 
-const BASE_URL = (process.env.GLM_BASE_URL || 'https://open.bigmodel.cn').replace(/\/$/, '');
+const DEFAULT_BASE_URL = 'https://open.bigmodel.cn';
 const QUOTA_PATH = '/api/monitor/usage/quota/limit';
 
 const LEVEL_LABEL: Record<string, string> = { lite: 'Lite', pro: 'Pro', max: 'Max' };
@@ -25,20 +26,42 @@ interface GlmResponse {
 /**
  * GLM Coding Plan usage via the public monitor endpoint.
  * Requires GLM_API_KEY (sent as the raw Authorization header).
+ * Extra accounts: GLM_API_KEY_2, GLM_API_KEY_3, … (merged into one card).
  */
-export async function fetchGlmUsage(): Promise<ProviderResult> {
-  const apiKey = process.env.GLM_API_KEY;
+export function fetchGlmUsage(): Promise<ProviderResult> {
+  const accounts = readIndexedAccounts({
+    vars: ['GLM_API_KEY', 'GLM_BASE_URL'],
+    triggerVars: ['GLM_API_KEY'],
+  }).map(({ key, env }) => ({
+    key,
+    config: {
+      apiKey: env.GLM_API_KEY,
+      apiKeyEnv: accountEnvName('GLM_API_KEY', key),
+      baseUrl: (env.GLM_BASE_URL || process.env.GLM_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, ''),
+    },
+  }));
+  return fetchMultiAccount(accounts, fetchGlmAccount, { provider: 'glm', label: 'GLM' });
+}
+
+interface GlmAccount {
+  apiKey?: string;
+  apiKeyEnv: string;
+  baseUrl: string;
+}
+
+async function fetchGlmAccount(account: GlmAccount): Promise<ProviderResult> {
+  const { apiKey, apiKeyEnv, baseUrl } = account;
   if (!apiKey) {
     return {
       ok: false,
       provider: 'glm',
       label: 'GLM',
-      error: 'GLM_API_KEY not set (copy .env.example -> .env)',
+      error: `${apiKeyEnv} not set (copy .env.example -> .env)`,
     };
   }
 
   try {
-    const resp = await fetch(`${BASE_URL}${QUOTA_PATH}`, {
+    const resp = await fetch(`${baseUrl}${QUOTA_PATH}`, {
       headers: { Authorization: apiKey, Accept: 'application/json' },
     });
     if (!resp.ok) {

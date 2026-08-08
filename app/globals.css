@@ -316,6 +316,39 @@ main {
   border-color: var(--yellow);
 }
 
+/* Multi-account toggle (Σ / 1 / 2 / …) */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+.seg button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.seg button:hover {
+  color: var(--text);
+}
+.seg button.on {
+  background: var(--tag-bg);
+  color: var(--tag-color);
+}
+.metric .est {
+  color: var(--muted);
+  margin-right: 1px;
+}
+
 /* Metrics */
 .metric {
   margin-bottom: 12px;

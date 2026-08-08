@@ -1,6 +1,7 @@
 import type { ProviderResult, UsageLimit } from './types';
+import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accounts';
 
-const BASE_URL = (process.env.MINIMAX_BASE_URL || 'https://www.minimaxi.com').replace(/\/$/, '');
+const DEFAULT_BASE_URL = 'https://www.minimaxi.com';
 const REMAINS_PATH = '/v1/token_plan/remains';
 
 interface MinimaxModelRemain {
@@ -53,20 +54,50 @@ interface MinimaxRemainsResponse {
  * Quotas are 5-hour rolling + weekly, matching the dashboard format.
  * Defaults to domestic: https://www.minimaxi.com
  * Set MINIMAX_BASE_URL=https://www.minimax.io for global if needed.
+ * Extra accounts: MINIMAX_API_KEY_2, MINIMAX_API_KEY_3, … (merged into one card).
  */
-export async function fetchMinimaxUsage(): Promise<ProviderResult> {
-  const apiKey = process.env.MINIMAX_API_KEY;
+export function fetchMinimaxUsage(): Promise<ProviderResult> {
+  const accounts = readIndexedAccounts({
+    vars: ['MINIMAX_API_KEY', 'MINIMAX_BASE_URL', 'MINIMAX_PLAN_LABEL'],
+    triggerVars: ['MINIMAX_API_KEY'],
+  }).map(({ key, env }) => ({
+    key,
+    config: {
+      apiKey: env.MINIMAX_API_KEY,
+      apiKeyEnv: accountEnvName('MINIMAX_API_KEY', key),
+      baseUrl: (env.MINIMAX_BASE_URL || process.env.MINIMAX_BASE_URL || DEFAULT_BASE_URL).replace(
+        /\/$/,
+        '',
+      ),
+      planLabel: env.MINIMAX_PLAN_LABEL || process.env.MINIMAX_PLAN_LABEL,
+    },
+  }));
+  return fetchMultiAccount(accounts, fetchMinimaxAccount, {
+    provider: 'minimax',
+    label: 'MiniMax',
+  });
+}
+
+interface MinimaxAccount {
+  apiKey?: string;
+  apiKeyEnv: string;
+  baseUrl: string;
+  planLabel?: string;
+}
+
+async function fetchMinimaxAccount(account: MinimaxAccount): Promise<ProviderResult> {
+  const { apiKey, apiKeyEnv, baseUrl, planLabel } = account;
   if (!apiKey) {
     return {
       ok: false,
       provider: 'minimax',
       label: 'MiniMax',
-      error: 'MINIMAX_API_KEY not set (use your Token Plan Subscription Key)',
+      error: `${apiKeyEnv} not set (use your Token Plan Subscription Key)`,
     };
   }
 
   try {
-    const resp = await fetch(`${BASE_URL}${REMAINS_PATH}`, {
+    const resp = await fetch(`${baseUrl}${REMAINS_PATH}`, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -107,6 +138,8 @@ export async function fetchMinimaxUsage(): Promise<ProviderResult> {
 
     // 5h Window
     let i5hPercent = 0;
+    let i5hUsed: number | undefined;
+    let i5hTotal: number | undefined;
     const i5hRemains = modelData?.current_interval_remaining_percent;
     if (typeof i5hRemains === 'number') {
       i5hPercent = Math.max(0, Math.min(100, 100 - i5hRemains)); // remaining -> used
@@ -116,6 +149,8 @@ export async function fetchMinimaxUsage(): Promise<ProviderResult> {
       if (total > 0 && typeof usedOrRem === 'number') {
         const used = usedOrRem <= total ? total - usedOrRem : usedOrRem;
         i5hPercent = Math.round((used / total) * 100);
+        i5hUsed = used;
+        i5hTotal = total;
       }
     }
     const i5hReset = modelData?.remains_time ?? modelData?.current_interval_remains_time;
@@ -123,6 +158,8 @@ export async function fetchMinimaxUsage(): Promise<ProviderResult> {
       label: '5h Window',
       kind: '5h',
       percent: clampPercent(i5hPercent),
+      used: i5hUsed,
+      total: i5hTotal,
     };
     if (typeof i5hReset === 'number' && i5hReset > 0) {
       const ms = i5hReset > 1_000_000 ? i5hReset : i5hReset * 1000; // ms vs seconds heuristic
@@ -132,6 +169,8 @@ export async function fetchMinimaxUsage(): Promise<ProviderResult> {
 
     // Weekly
     let weeklyPercent = 0;
+    let weeklyUsed: number | undefined;
+    let weeklyTotal: number | undefined;
     const wRemains = modelData?.current_weekly_remaining_percent;
     if (typeof wRemains === 'number') {
       weeklyPercent = Math.max(0, Math.min(100, 100 - wRemains));
@@ -141,6 +180,8 @@ export async function fetchMinimaxUsage(): Promise<ProviderResult> {
       if (total > 0 && typeof usedOrRem === 'number') {
         const used = usedOrRem <= total ? total - usedOrRem : usedOrRem;
         weeklyPercent = Math.round((used / total) * 100);
+        weeklyUsed = used;
+        weeklyTotal = total;
       }
     }
     const wReset = modelData?.weekly_remains_time ?? modelData?.current_weekly_remains_time;
@@ -148,6 +189,8 @@ export async function fetchMinimaxUsage(): Promise<ProviderResult> {
       label: 'Weekly',
       kind: 'weekly',
       percent: clampPercent(weeklyPercent),
+      used: weeklyUsed,
+      total: weeklyTotal,
     };
     if (typeof wReset === 'number' && wReset > 0) {
       const ms = wReset > 1_000_000 ? wReset : wReset * 1000;
@@ -160,7 +203,7 @@ export async function fetchMinimaxUsage(): Promise<ProviderResult> {
       provider: 'minimax',
       label: 'MiniMax',
       summary: {
-        planLabel: process.env.MINIMAX_PLAN_LABEL || inferPlanLabel(raw),
+        planLabel: planLabel || inferPlanLabel(raw),
         limits,
       },
       raw: raw as unknown,

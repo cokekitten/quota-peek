@@ -2,10 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import type { ProviderResult, UsageLimit } from './types';
+import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accounts';
 
-const CREDS_PATH =
-  process.env.KIMI_CREDENTIALS_PATH ||
-  path.join(os.homedir(), '.kimi-code', 'credentials', 'kimi-code.json');
+const DEFAULT_CREDS_PATH = path.join(os.homedir(), '.kimi-code', 'credentials', 'kimi-code.json');
 const USAGE_URL = process.env.KIMI_USAGE_URL || 'https://api.kimi.com/coding/v1/usages';
 const TOKEN_URL = process.env.KIMI_TOKEN_URL || 'https://auth.kimi.com/api/oauth/token';
 // Public OAuth client_id used by the official Kimi Code CLI.
@@ -42,6 +41,18 @@ interface KimiUsagesResponse {
   }>;
 }
 
+/** One Kimi account's identity + where to get its token. */
+interface KimiAccount {
+  /** Plain API Key from the Kimi Code Console (skips OAuth when set). */
+  apiKey?: string;
+  /** Name of the env var above, for error messages. */
+  apiKeyEnv: string;
+  /** OAuth credential file written by the CLI login; undefined = not configured. */
+  credsPath?: string;
+  /** Name of the env var above, for error messages. */
+  credsPathEnv: string;
+}
+
 /**
  * Kimi (Kimi Code membership) usage via the same endpoint the CLI's `/usage`
  * command and the Kimi Code Console use: GET api.kimi.com/coding/v1/usages.
@@ -50,16 +61,40 @@ interface KimiUsagesResponse {
  * ~/.kimi-code/credentials/kimi-code.json (access token lives ~15 min; we
  * refresh via auth.kimi.com and write the rotated tokens back). Alternatively
  * set KIMI_API_KEY to an API Key from the Kimi Code Console to skip OAuth.
+ *
+ * Extra accounts (KIMI_API_KEY_2 / KIMI_CREDENTIALS_PATH_2, …) merge into the
+ * same card via the shared multi-account layer: the bars combine absolute
+ * quotas and `summary.accounts` feeds the card's per-account toggle.
  */
-export async function fetchKimiUsage(): Promise<ProviderResult> {
+export function fetchKimiUsage(): Promise<ProviderResult> {
+  const accounts = readIndexedAccounts({
+    vars: ['KIMI_API_KEY', 'KIMI_CREDENTIALS_PATH'],
+  }).map(({ key, env }) => ({
+    key,
+    config: {
+      apiKey: env.KIMI_API_KEY,
+      apiKeyEnv: accountEnvName('KIMI_API_KEY', key),
+      // Only account 1 defaults to the CLI's own credential file; later
+      // accounts must point at their file explicitly.
+      credsPath:
+        key === '1' ? env.KIMI_CREDENTIALS_PATH || DEFAULT_CREDS_PATH : env.KIMI_CREDENTIALS_PATH,
+      credsPathEnv: accountEnvName('KIMI_CREDENTIALS_PATH', key),
+    },
+  }));
+  return fetchMultiAccount(accounts, fetchKimiAccount, { provider: 'kimi', label: 'Kimi' });
+}
+
+async function fetchKimiAccount(account: KimiAccount): Promise<ProviderResult> {
+  const provider = 'kimi' as const;
+  const label = 'Kimi';
   let token: string;
   try {
-    token = await getAccessToken();
+    token = await getAccessToken(account);
   } catch (err) {
     return {
       ok: false,
-      provider: 'kimi',
-      label: 'Kimi',
+      provider,
+      label,
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -75,8 +110,8 @@ export async function fetchKimiUsage(): Promise<ProviderResult> {
     if (!resp.ok) {
       return {
         ok: false,
-        provider: 'kimi',
-        label: 'Kimi',
+        provider,
+        label,
         error: `HTTP ${resp.status} ${resp.statusText}`,
       };
     }
@@ -101,8 +136,8 @@ export async function fetchKimiUsage(): Promise<ProviderResult> {
     const level = data.user?.membership?.level;
     return {
       ok: true,
-      provider: 'kimi',
-      label: 'Kimi',
+      provider,
+      label,
       summary: {
         planLabel: level ? levelLabel(level) : undefined,
         limits,
@@ -112,26 +147,30 @@ export async function fetchKimiUsage(): Promise<ProviderResult> {
   } catch (err) {
     return {
       ok: false,
-      provider: 'kimi',
-      label: 'Kimi',
+      provider,
+      label,
       error: err instanceof Error ? err.message : String(err),
     };
   }
 }
 
-/** Resolve a usable access token: KIMI_API_KEY, or OAuth file (refresh if needed). */
-async function getAccessToken(): Promise<string> {
-  const apiKey = process.env.KIMI_API_KEY;
+/** Resolve a usable access token: API key, or OAuth file (refresh if needed). */
+async function getAccessToken(account: KimiAccount): Promise<string> {
+  const { apiKey, apiKeyEnv, credsPath, credsPathEnv } = account;
   if (apiKey) return apiKey;
+
+  if (!credsPath) {
+    throw new Error(`Not configured — set ${apiKeyEnv} or ${credsPathEnv}.`);
+  }
 
   let creds: KimiCredentials;
   try {
-    creds = JSON.parse(await fs.readFile(CREDS_PATH, 'utf8'));
+    creds = JSON.parse(await fs.readFile(credsPath, 'utf8'));
   } catch (err) {
     throw new Error(
-      `Cannot read credentials (${CREDS_PATH}): ${
+      `Cannot read credentials (${credsPath}): ${
         err instanceof Error ? err.message : String(err)
-      }. Log in via the Kimi Code CLI, or set KIMI_API_KEY.`,
+      }. Log in via the Kimi Code CLI, or set ${apiKeyEnv}.`,
     );
   }
 
@@ -172,7 +211,7 @@ async function getAccessToken(): Promise<string> {
     expires_at: nowS + (data.expires_in ?? 900),
   };
   try {
-    await fs.writeFile(CREDS_PATH, JSON.stringify(updated, null, 2), 'utf8');
+    await fs.writeFile(credsPath, JSON.stringify(updated, null, 2), 'utf8');
   } catch {
     /* non-fatal: token still works for this run */
   }
@@ -189,6 +228,8 @@ function quotaLimit(q: KimiQuota | undefined, label: string, kind: string): Usag
     label,
     kind,
     percent: Math.max(0, Math.min(100, Math.round((used / limit) * 100))),
+    used,
+    total: limit,
   };
   if (q.resetTime) {
     const t = new Date(q.resetTime);

@@ -15,8 +15,20 @@ export interface UsageLimit {
   total?: number;
   /** ISO timestamp when the window resets, if known. */
   resetAt?: string;
+  /** True when percent is a cross-account estimate (accounts report % only). */
+  estimated?: boolean;
   /** Optional extra detail, e.g. per-model breakdown. */
   detail?: string;
+}
+
+/** Per-account view for multi-account providers (e.g. two Kimi memberships). */
+export interface AccountUsage {
+  /** Short display key, e.g. "1" / "2". */
+  key: string;
+  ok: boolean;
+  planLabel?: string;
+  limits: UsageLimit[];
+  error?: string;
 }
 
 export interface ProviderSummary {
@@ -24,6 +36,10 @@ export interface ProviderSummary {
   planLabel?: string;
   /** Normalized metric rows. */
   limits: UsageLimit[];
+  /** Per-account breakdown when more than one account is configured. */
+  accounts?: AccountUsage[];
+  /** True when some configured accounts failed and were excluded from the merge. */
+  partial?: boolean;
   /** Provider may attach extra fields (plan_type, level, …) — kept for the UI. */
   [key: string]: unknown;
 }

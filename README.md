@@ -136,6 +136,10 @@ See [`.env.example`](.env.example) for the full list. The only one you must set 
 
 **Kimi** works out of the box if you're logged in via the Kimi Code CLI (it reads `~/.kimi-code/credentials/kimi-code.json` and refreshes expired tokens, writing the rotated pair back). Alternatively set `KIMI_API_KEY` to an API Key from the Kimi Code Console — recommended for Docker.
 
+### Multiple accounts (key-based providers)
+
+GLM, MiniMax and Kimi support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
+
 ## 🏗️ How it works
 
 ```
