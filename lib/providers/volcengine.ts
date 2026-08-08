@@ -140,14 +140,13 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
     const usage = data.Result?.QuotaUsage ?? [];
     if (!apiErr?.Code && usage.length > 0) {
       const limits: UsageLimit[] = [];
-      let monthly: CodingPlanQuota | null = null;
       for (const q of usage) {
         if (typeof q.Percent !== 'number') continue;
         const percent = Math.max(0, Math.min(100, Math.round(q.Percent)));
         const resetAt = q.ResetTimestamp ? new Date(q.ResetTimestamp * 1000).toISOString() : undefined;
         if (q.Level === 'session') limits.push({ label: '5h Window', kind: '5h', percent, resetAt });
         else if (q.Level === 'weekly') limits.push({ label: 'Weekly', kind: 'weekly', percent, resetAt });
-        else if (q.Level === 'monthly') monthly = q;
+        else if (q.Level === 'monthly') limits.push({ label: 'Monthly', kind: 'monthly', percent, resetAt });
       }
       return {
         ok: true,
@@ -157,7 +156,6 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
           // GetCodingPlanUsage exposes no tier name — status is the only signal.
           planLabel: 'Coding Plan',
           limits,
-          monthly,
         },
         raw: data as unknown,
       };
@@ -188,6 +186,8 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
       if (fiveHour) limits.push(fiveHour);
       const weekly = afpQuotaLimit(result.AFPWeekly, 'Weekly', 'weekly');
       if (weekly) limits.push(weekly);
+      const monthly = afpQuotaLimit(result.AFPMonthly, 'Monthly', 'monthly');
+      if (monthly) limits.push(monthly);
       return {
         ok: true,
         provider,

@@ -11,9 +11,17 @@ interface Props {
 
 // Slots per provider. Most providers report 5h + Weekly windows.
 // Codex and SuperGrok only have a single weekly window now.
+// Volcengine additionally reports a monthly window.
 const getSlots = (provider: ProviderKey) => {
   if (provider === 'supergrok' || provider === 'codex') {
     return [{ kind: 'weekly', label: 'Weekly' }] as const;
+  }
+  if (provider === 'volcengine') {
+    return [
+      { kind: '5h', label: '5h Window' },
+      { kind: 'weekly', label: 'Weekly' },
+      { kind: 'monthly', label: 'Monthly' },
+    ] as const;
   }
   return [
     { kind: '5h', label: '5h Window' },

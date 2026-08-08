@@ -106,7 +106,9 @@ describe('fetchVolcengineUsage', () => {
     expect(fiveHour.resetAt).toBe(new Date(1786187179 * 1000).toISOString());
     const weekly = result.summary?.limits.find((l) => l.kind === 'weekly')!;
     expect(weekly.percent).toBe(16);
-    expect(result.summary?.monthly).toMatchObject({ Level: 'monthly' });
+    const monthly = result.summary?.limits.find((l) => l.kind === 'monthly')!;
+    expect(monthly.percent).toBe(8);
+    expect(monthly.resetAt).toBe(new Date(1788537599 * 1000).toISOString());
   });
 
   it('falls back to GetAFPUsage when the plan predates GetCodingPlanUsage', async () => {
@@ -128,6 +130,8 @@ describe('fetchVolcengineUsage', () => {
     expect(fiveHour).toMatchObject({ percent: 25, used: 300, total: 1200 });
     const weekly = result.summary?.limits.find((l) => l.kind === 'weekly')!;
     expect(weekly).toMatchObject({ percent: 50, used: 4500, total: 9000 });
+    const monthly = result.summary?.limits.find((l) => l.kind === 'monthly')!;
+    expect(monthly).toMatchObject({ percent: 2, used: 600, total: 30000 });
     expect(result.summary?.daily).toMatchObject({ Quota: 4000 });
   });
 
