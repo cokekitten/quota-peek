@@ -4,6 +4,7 @@ import { fetchGlmUsage } from './glm';
 import { fetchSupergrokUsage } from './supergrok';
 import { fetchMinimaxUsage } from './minimax';
 import { fetchKimiUsage } from './kimi';
+import { fetchVolcengineUsage } from './volcengine';
 import { PROVIDER_KEYS } from './types';
 import type { ProviderDef, ProviderKey, ProviderResult } from './types';
 
@@ -23,6 +24,7 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
   supergrok: { key: 'supergrok', fn: fetchSupergrokUsage },
   minimax: { key: 'minimax', fn: fetchMinimaxUsage },
   kimi: { key: 'kimi', fn: fetchKimiUsage },
+  volcengine: { key: 'volcengine', fn: fetchVolcengineUsage },
 };
 
 /** Look up a provider by key. Throws on unknown keys. */

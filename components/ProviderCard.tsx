@@ -279,4 +279,5 @@ const LABELS: Record<ProviderKey, string> = {
   supergrok: 'SuperGrok',
   minimax: 'MiniMax',
   kimi: 'Kimi',
+  volcengine: 'Volcengine',
 };
