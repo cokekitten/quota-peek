@@ -148,9 +148,15 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
         if (typeof q.Percent !== 'number') continue;
         const percent = Math.max(0, Math.min(100, Math.round(q.Percent)));
         const resetAt = q.ResetTimestamp ? new Date(q.ResetTimestamp * 1000).toISOString() : undefined;
-        if (q.Level === 'session') limits.push({ label: '5h Window', kind: '5h', percent, resetAt });
-        else if (q.Level === 'weekly') limits.push({ label: 'Weekly', kind: 'weekly', percent, resetAt });
-        else if (q.Level === 'monthly') limits.push({ label: 'Monthly', kind: 'monthly', percent, resetAt });
+        // Cap is the window's quota scale (100 for both accounts seen so far).
+        // Reporting Percent/Cap as used/total lets merges weight by cap — an
+        // exact combined value whenever account caps are comparable, instead
+        // of a conservatively ≈-flagged mean.
+        const cap = typeof q.Cap === 'number' && q.Cap > 0 ? q.Cap : undefined;
+        const base = { percent, resetAt, used: cap ? q.Percent : undefined, total: cap };
+        if (q.Level === 'session') limits.push({ label: '5h Window', kind: '5h', ...base });
+        else if (q.Level === 'weekly') limits.push({ label: 'Weekly', kind: 'weekly', ...base });
+        else if (q.Level === 'monthly') limits.push({ label: 'Monthly', kind: 'monthly', ...base });
       }
       return {
         ok: true,

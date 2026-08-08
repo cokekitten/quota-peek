@@ -161,7 +161,7 @@ describe('fetchVolcengineUsage', () => {
     expect(result.error).toContain('No Coding Plan');
   });
 
-  it('merges multiple coding-plan accounts as a flagged mean (percent-scale)', async () => {
+  it('merges multiple coding-plan accounts exactly via their Cap scale', async () => {
     setEnv('VOLC_ACCESS_KEY', AK);
     setEnv('VOLC_SECRET_KEY', SK);
     setEnv('VOLC_ACCESS_KEY_2', AK + '2');
@@ -172,8 +172,8 @@ describe('fetchVolcengineUsage', () => {
         Result: {
           Status: 'Running',
           QuotaUsage: [
-            { Level: 'session', Percent: 20, ResetTimestamp: 1786187179 },
-            { Level: 'weekly', Percent: 40, ResetTimestamp: 1786291200 },
+            { Level: 'session', Percent: 20, ResetTimestamp: 1786187179, Cap: 100 },
+            { Level: 'weekly', Percent: 40, ResetTimestamp: 1786291200, Cap: 100 },
           ],
         },
       },
@@ -184,6 +184,28 @@ describe('fetchVolcengineUsage', () => {
     expect(result.summary?.accounts).toHaveLength(2);
     const fiveHour = result.summary?.limits.find((l) => l.kind === '5h')!;
     expect(fiveHour.percent).toBe(20);
-    expect(fiveHour.estimated).toBe(true); // percent-scale Cap=100 → not exact
+    expect(fiveHour.estimated).toBeUndefined(); // Cap scale → exact merge, no ≈
+    expect(fiveHour.used).toBe(40); // 20% × Cap 100, two accounts
+    expect(fiveHour.total).toBe(200);
+  });
+
+  it('still flags the merge ≈ estimated when accounts report no Cap', async () => {
+    setEnv('VOLC_ACCESS_KEY', AK);
+    setEnv('VOLC_SECRET_KEY', SK);
+    setEnv('VOLC_ACCESS_KEY_2', AK + '2');
+    setEnv('VOLC_SECRET_KEY_2', SK + '2');
+    mockByAction({
+      GetCodingPlanUsage: {
+        ResponseMetadata: {},
+        Result: {
+          Status: 'Running',
+          QuotaUsage: [{ Level: 'session', Percent: 20, ResetTimestamp: 1786187179 }],
+        },
+      },
+    });
+    const result = await fetchVolcengineUsage();
+    const fiveHour = result.summary?.limits.find((l) => l.kind === '5h')!;
+    expect(fiveHour.percent).toBe(20);
+    expect(fiveHour.estimated).toBe(true);
   });
 });
