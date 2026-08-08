@@ -167,6 +167,12 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
           return <Metric key={slot.kind} label={slot.label} limit={limit} dim={busy} />;
         })
       )}
+      {/* Windows beyond the static slots (e.g. Claude's model-scoped Fable
+          quota) render dynamically — new kinds appear with no slot changes. */}
+      {!(accountView && !accountView.ok) &&
+        limits
+          .filter((l) => !getSlots(provider).some((s) => s.kind === l.kind))
+          .map((l) => <Metric key={l.kind} label={l.label} limit={l} dim={busy} />)}
     </div>
   );
 }
@@ -237,9 +243,9 @@ function paceDelta(
   resetAt: string,
 ): { text: string; cls: 'over' | 'under' | 'even'; title: string } | null {
   const duration =
-    kind === '5h'
+    kind === '5h' || kind === 'session'
       ? 5 * 3600e3
-      : kind === 'weekly'
+      : kind === 'weekly' || kind.startsWith('weekly_')
         ? 7 * 24 * 3600e3
         : kind === 'monthly'
           ? 30 * 24 * 3600e3 // billing-cycle anchored; start unknown → 30d estimate

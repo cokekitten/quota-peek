@@ -28,9 +28,19 @@ interface UsageWindow {
   utilization?: number;
   resets_at?: string | null;
 }
+/** Newer structured limit entry from the `limits[]` array. */
+interface StructuredLimit {
+  kind?: string;
+  group?: string;
+  percent?: number;
+  resets_at?: string | null;
+  scope?: { model?: { id?: string | null; display_name?: string } | null } | null;
+  is_active?: boolean;
+}
 interface UsageResponse {
   five_hour?: UsageWindow;
   seven_day?: UsageWindow;
+  limits?: StructuredLimit[];
 }
 
 /**
@@ -153,11 +163,10 @@ async function fetchLive(): Promise<ProviderResult> {
     };
   }
 
-  // 3. Normalize into limits — only the 5h and weekly windows.
+  // 3. Normalize into limits — 5h + weekly, plus any model-scoped windows
+  // (e.g. Fable's separate weekly quota) from the structured limits[] array.
   const planName = planLabel(subscriptionType);
-  const limits: UsageLimit[] = [];
-  pushWindow(limits, '5h Window', '5h', data.five_hour);
-  pushWindow(limits, 'Weekly', 'weekly', data.seven_day);
+  const limits = summarizeUsage(data);
 
   return {
     ok: true,
@@ -166,6 +175,30 @@ async function fetchLive(): Promise<ProviderResult> {
     summary: { planLabel: planName ?? undefined, limits },
     raw: data as unknown,
   };
+}
+
+/** Pure: fold the API response into card rows. Exported for tests. */
+export function summarizeUsage(data: UsageResponse): UsageLimit[] {
+  const limits: UsageLimit[] = [];
+  pushWindow(limits, '5h Window', '5h', data.five_hour);
+  pushWindow(limits, 'Weekly', 'weekly', data.seven_day);
+
+  for (const entry of data.limits ?? []) {
+    // session / weekly_all duplicate the legacy windows above.
+    if (entry.kind !== 'weekly_scoped') continue;
+    const model = entry.scope?.model?.display_name;
+    if (!model) continue;
+    const row: UsageLimit = {
+      label: `Weekly · ${model}`,
+      kind: `weekly_scoped_${model.toLowerCase()}`,
+      percent: clampPercent(entry.percent),
+    };
+    if (entry.resets_at) row.resetAt = entry.resets_at;
+    // A scoped window marked active is the plan's current binding constraint.
+    if (entry.is_active) row.detail = 'binding';
+    limits.push(row);
+  }
+  return limits;
 }
 
 function pushWindow(
