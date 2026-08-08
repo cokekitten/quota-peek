@@ -119,8 +119,10 @@ export async function fetchMultiAccount<T>(
  * - otherwise → mean of percents, flagged `estimated` (never passed off as
  *   exact; the UI marks it with ≈).
  * resetAt is the earliest upcoming reset across accounts — when combined
- * capacity first starts recovering. Pace math is disabled for merged rows in
- * the UI: windows from different accounts don't share a time base.
+ * capacity first starts recovering. Merged rows also carry `expectedPercent`:
+ * the quota-weighted mean of each account's expected consumption by elapsed
+ * time (windows share a duration but reset independently), so the UI can show
+ * a pace delta for merged bars too.
  */
 export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
   const byKind = new Map<string, UsageLimit[]>();
@@ -153,10 +155,34 @@ export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
       .filter((r): r is string => !!r)
       .sort();
     if (resets[0]) merged.resetAt = resets[0];
+    // Pace for merged rows: each account's window shares the same duration but
+    // resets at its own time, so weight the per-account expected consumption
+    // (by elapsed time) with its quota. Only when every account reports a
+    // reset — comparing against a partial time base would be misleading.
+    const duration = KIND_DURATION_MS[merged.kind];
+    if (duration && group.every((l) => !!l.resetAt)) {
+      const now = Date.now();
+      let wSum = 0;
+      let eSum = 0;
+      for (const l of group) {
+        const w = exact ? (l.total ?? 1) : 1;
+        const remainMs = new Date(l.resetAt!).getTime() - now;
+        const expected = Math.min(100, Math.max(0, (1 - remainMs / duration) * 100));
+        wSum += w;
+        eSum += w * expected;
+      }
+      if (wSum > 0) merged.expectedPercent = eSum / wSum;
+    }
     out.push(merged);
   }
   return out;
 }
+
+/** Window durations implied by kind, mirroring the card's pace math. */
+const KIND_DURATION_MS: Record<string, number> = {
+  '5h': 5 * 3600e3,
+  weekly: 7 * 24 * 3600e3,
+};
 
 function clampPercent(v: number): number {
   return Math.max(0, Math.min(100, v));

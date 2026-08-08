@@ -17,6 +17,12 @@ export interface UsageLimit {
   resetAt?: string;
   /** True when percent is a cross-account estimate (accounts report % only). */
   estimated?: boolean;
+  /**
+   * Merged rows only: quota-weighted expected consumption % by elapsed time,
+   * computed at fetch time from each account's own reset clock. Lets the UI
+   * show a pace delta even though merged windows don't share one reset time.
+   */
+  expectedPercent?: number;
   /** Optional extra detail, e.g. per-model breakdown. */
   detail?: string;
 }

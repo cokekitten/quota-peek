@@ -11,6 +11,7 @@ export interface UsageLimit {
   total?: number;
   resetAt?: string;
   estimated?: boolean;
+  expectedPercent?: number;
   detail?: string;
 }
 

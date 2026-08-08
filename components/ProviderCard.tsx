@@ -159,17 +159,7 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
         getSlots(provider).map((slot) => {
           // Match by kind; a window missing from the response renders at 0%.
           const limit = limits.find((l) => l.kind === slot.kind);
-          return (
-            <Metric
-              key={slot.kind}
-              label={slot.label}
-              limit={limit}
-              dim={busy}
-              // Merged rows combine windows with different resets — pace math
-              // would be meaningless. Per-account views keep it.
-              allowPace={!multi || sel > 0}
-            />
-          );
+          return <Metric key={slot.kind} label={slot.label} limit={limit} dim={busy} />;
         })
       )}
     </div>
@@ -180,17 +170,23 @@ function Metric({
   label,
   limit,
   dim,
-  allowPace = true,
 }: {
   label: string;
   limit?: UsageLimit;
   dim?: boolean;
-  allowPace?: boolean;
 }) {
   const p = limit ? Math.max(0, Math.min(100, limit.percent)) : 0;
   const sev = p >= 90 ? 'crit' : p >= 70 ? 'warn' : 'ok';
   const reset = limit?.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
-  const pace = allowPace && limit?.resetAt ? paceDelta(limit.kind, p, limit.resetAt) : null;
+  // Merged rows carry a quota-weighted expectedPercent (windows reset at
+  // different times); single accounts derive expected from their own reset.
+  const pace = limit
+    ? limit.expectedPercent !== undefined
+      ? paceFromExpected(p, limit.expectedPercent)
+      : limit.resetAt
+        ? paceDelta(limit.kind, p, limit.resetAt)
+        : null
+    : null;
 
   return (
     <div className="metric">
@@ -241,6 +237,14 @@ function paceDelta(
   const remainMs = new Date(resetAt).getTime() - Date.now();
   if (!Number.isFinite(remainMs)) return null;
   const expected = Math.min(100, Math.max(0, (1 - remainMs / duration) * 100));
+  return paceFromExpected(percent, expected);
+}
+
+/** Delta of actual vs expected consumption: positive = burning faster. */
+function paceFromExpected(
+  percent: number,
+  expected: number,
+): { text: string; cls: 'over' | 'under' | 'even'; title: string } {
   const delta = Math.round(percent - expected);
   const expectedRound = Math.round(expected);
   if (delta === 0) {

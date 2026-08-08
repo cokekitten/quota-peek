@@ -79,6 +79,27 @@ describe('mergeLimits', () => {
     expect(merged[0].used).toBeUndefined();
   });
 
+  it('derives a quota-weighted expectedPercent so merged rows keep pace deltas', () => {
+    const now = Date.now();
+    // 2.5h left of a 5h window → 50% expected; 1h left → 80% expected.
+    const r1 = new Date(now + 2.5 * 3600e3).toISOString();
+    const r2 = new Date(now + 1 * 3600e3).toISOString();
+    const merged = mergeLimits([
+      { label: '5h Window', kind: '5h', percent: 50, used: 250, total: 500, resetAt: r1 },
+      { label: '5h Window', kind: '5h', percent: 80, used: 100, total: 125, resetAt: r2 },
+    ]);
+    // Quota weights 500 vs 125 → (50·500 + 80·125) / 625 = 56
+    expect(merged[0].expectedPercent).toBeCloseTo(56, 0);
+  });
+
+  it('omits expectedPercent when any account lacks a reset time', () => {
+    const merged = mergeLimits([
+      { label: '5h Window', kind: '5h', percent: 10, resetAt: new Date(Date.now() + 3600e3).toISOString() },
+      { label: '5h Window', kind: '5h', percent: 20 },
+    ]);
+    expect(merged[0].expectedPercent).toBeUndefined();
+  });
+
   it('groups by kind and takes the earliest reset across accounts', () => {
     const later = '2026-08-10T12:00:00.000Z';
     const sooner = '2026-08-09T08:00:00.000Z';
