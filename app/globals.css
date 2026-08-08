@@ -286,6 +286,14 @@ main {
   font-size: 15px;
   font-weight: 650;
 }
+/* Label + account toggle pinned as a left group, so tag width changes on the
+   right never shift the toggle's position. */
+.head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
 .head-right {
   display: flex;
   align-items: center;

@@ -116,33 +116,35 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
   return (
     <div className={`card${loading ? ' loading' : ''}`}>
       <div className="card-head">
-        <span className="label">{label}</span>
-        {multi && (
-          <span className="seg" role="tablist" aria-label="Account">
-            <button
-              className={sel === 0 ? 'on' : ''}
-              onClick={() => setAcct(0)}
-              title="Merged across accounts"
-            >
-              Σ
-            </button>
-            {accounts.map((a, i) => (
+        <span className="head-left">
+          <span className="label">{label}</span>
+          {multi && (
+            <span className="seg" role="tablist" aria-label="Account">
               <button
-                key={a.key}
-                className={sel === i + 1 ? 'on' : ''}
-                onClick={() => setAcct(i + 1)}
-                title={
-                  a.ok
-                    ? `Account ${a.key}${a.planLabel ? ` · ${a.planLabel}` : ''}`
-                    : `Account ${a.key}: ${a.error || 'offline'}`
-                }
+                className={sel === 0 ? 'on' : ''}
+                onClick={() => setAcct(0)}
+                title="Merged across accounts"
               >
-                {a.key}
-                {!a.ok && '!'}
+                Σ
               </button>
-            ))}
-          </span>
-        )}
+              {accounts.map((a, i) => (
+                <button
+                  key={a.key}
+                  className={sel === i + 1 ? 'on' : ''}
+                  onClick={() => setAcct(i + 1)}
+                  title={
+                    a.ok
+                      ? `Account ${a.key}${a.planLabel ? ` · ${a.planLabel}` : ''}`
+                      : `Account ${a.key}: ${a.error || 'offline'}`
+                  }
+                >
+                  {a.key}
+                  {!a.ok && '!'}
+                </button>
+              ))}
+            </span>
+          )}
+        </span>
         <span className="head-right">
           {busy && <span className="spinner" title={loading ? 'loading' : 'refreshing'} />}
           <span className={stale ? 'tag stale' : 'tag'}>
