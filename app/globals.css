@@ -291,11 +291,6 @@ main {
   align-items: center;
   gap: 8px;
 }
-.head-right .updated {
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
 .card-head .tag {
   font-size: 10px;
   padding: 3px 9px;

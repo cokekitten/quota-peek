@@ -109,7 +109,6 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
   const sel = multi && acct >= 1 && acct <= accounts.length ? acct : 0;
   const accountView = multi && sel > 0 ? accounts[sel - 1] : null;
   const limits = accountView ? accountView.limits : summary?.limits ?? [];
-  const at = state.status === 'ready' ? state.at : null;
   const planLabel = accountView ? accountView.planLabel : summary?.planLabel ?? undefined;
   const stale = state.status === 'ready' && !!state.data.stale;
   const partial = multi && !!summary?.partial;
@@ -145,11 +144,7 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
           </span>
         )}
         <span className="head-right">
-          {busy ? (
-            <span className="spinner" title={loading ? 'loading' : 'refreshing'} />
-          ) : at ? (
-            <span className="updated">{new Date(at).toLocaleTimeString()}</span>
-          ) : null}
+          {busy && <span className="spinner" title={loading ? 'loading' : 'refreshing'} />}
           <span className={stale ? 'tag stale' : 'tag'}>
             {loading
               ? '—'
