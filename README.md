@@ -58,12 +58,12 @@ docker run -d --name quota-peek -p 5928:5928 \
   -e GLM_API_KEY="your-glm-key" \
   -e CLAUDE_CREDENTIALS_PATH="/secrets/claude-creds.json" \
   -e CODEX_AUTH_PATH="/secrets/codex-auth.json" \
-  -e GROK_AUTH_PATH="/secrets/grok-auth.json" \
+  -e GROK_AUTH_PATH="/secrets/grok/auth.json" \
   -e MINIMAX_API_KEY="your-minimax-subscription-key" \
   -e KIMI_API_KEY="your-kimi-code-api-key" \
   -v "$HOME/.claude/.credentials.json:/secrets/claude-creds.json:ro" \
   -v "$HOME/.codex/auth.json:/secrets/codex-auth.json:ro" \
-  -v "$HOME/.grok/auth.json:/secrets/grok-auth.json:ro" \
+  -v "$HOME/.grok:/secrets/grok" \
   quota-peek
 ```
 
@@ -73,7 +73,7 @@ docker run -d --name quota-peek -p 5928:5928 \
 
 - **GLM** — a plain API key, passed via `-e GLM_API_KEY`.
 - **Claude Code** & **Codex** — these read credential *files* (`~/.claude/.credentials.json`, `~/.codex/auth.json`) that only exist where you logged in. The image never bakes them in. Instead, bind-mount each file from your host into the container (read-only with `:ro`) and point the app at the mount path via `CLAUDE_CREDENTIALS_PATH` / `CODEX_AUTH_PATH`. Omit a mount and that provider simply shows as offline — the others keep working.
-- **SuperGrok** — reads `~/.grok/auth.json` (created by the official `grok` CLI after `grok login`). Mount it the same way via `GROK_AUTH_PATH`. If absent the card shows offline gracefully.
+- **SuperGrok** — reads `~/.grok/auth.json` (created by the official `grok` CLI after `grok login`). Mount the **directory** `~/.grok` read-write (not the file as `:ro`). xAI refresh tokens rotate; a read-only file mount lets the dashboard burn the login and then fail. If absent the card shows offline gracefully.
 - **MiniMax** (国内) — plain Subscription Key passed via `-e MINIMAX_API_KEY=...`. No file mount needed.
 - **Kimi** — pass `-e KIMI_API_KEY=...` (an API Key from the Kimi Code Console), or mount `~/.kimi-code/credentials/kimi-code.json` the same way as the other credential files via `KIMI_CREDENTIALS_PATH`. Prefer the API key in Docker: OAuth access tokens last ~15 min and refresh write-back needs a writable file.
 
@@ -99,7 +99,7 @@ Override the credential paths (e.g. non-default locations):
 ```bash
 CLAUDE_CREDENTIALS=/path/to/creds.json \
 CODEX_AUTH=/path/to/auth.json \
-GROK_AUTH=/path/to/grok-auth.json \
+GROK_DIR=/path/to/.grok \
 MINIMAX_API_KEY=your-key \
 KIMI_API_KEY=your-kimi-code-api-key \
 docker compose up -d --build
@@ -183,7 +183,7 @@ lib/providers/
 
 - **Codex** relies on an internal ChatGPT endpoint (`backend-api/wham/usage`). It's undocumented and may change without notice. Codex no longer has a 5h window — windows are classified by their actual duration, so the card shows whatever the plan currently has (weekly only).
 - **Claude** uses Anthropic's OAuth usage API (`/api/oauth/usage`). It rate-limits aggressively, so results are cached for 60 s and served stale for up to 5 min on failure. If the OAuth token expires, run `claude` interactively to refresh it.
-- **SuperGrok** access tokens expire after ~6h; the app refreshes them via the OIDC refresh_token grant and writes the rotated pair back to `~/.grok/auth.json`. If refresh fails (revoked token), run `grok login` again.
+- **SuperGrok** access tokens expire after ~6h; the app refreshes them via the OIDC refresh_token grant and writes the rotated pair back to `~/.grok/auth.json`. It will **not** refresh if that file is not writable (a successful grant + failed write-back invalidates `grok login`). If refresh fails (revoked token), run `grok login` again.
 - **Kimi** access tokens expire after ~15 min and are refreshed the same way. In Docker, prefer `KIMI_API_KEY` since the mounted credentials file is read-only.
 - **GLM** window labels are derived from each limit's actual `nextResetTime`, so they stay correct even as the opaque `unit` codes shift.
 - The **GLM** key in your `.env` is read at request time — restart the server after changing it.

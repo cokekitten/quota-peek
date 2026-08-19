@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -43,19 +44,15 @@ export async function fetchSupergrokUsage(): Promise<ProviderResult> {
   }
 
   // 2. Fetch billing data (primary source for the shared weekly pool).
+  //    One forced refresh + retry on 401/403: the access token can be rejected
+  //    before our local expiry clock thinks it's dead.
   let billing: any;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    const resp = await fetch(BILLING_URL, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
-        'User-Agent': 'quota-peek/1',
-      },
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
-
+    let resp = await fetchBilling(token);
+    if (resp.status === 401 || resp.status === 403) {
+      token = await getAccessToken({ force: true });
+      resp = await fetchBilling(token);
+    }
     if (resp.status === 401 || resp.status === 403) {
       return {
         ok: false,
@@ -143,8 +140,84 @@ export async function fetchSupergrokUsage(): Promise<ProviderResult> {
  *   { "https://auth.x.ai::<client_id>": { key, refresh_token, expires_at, oidc_client_id, ... } }
  * The access token in `key` expires after ~6h; when expired we run the
  * refresh_token grant and persist the rotated pair back to the file.
+ * Never refresh unless that write can succeed — xAI refresh tokens rotate,
+ * so a successful grant + failed write-back kills the grok CLI login.
  */
-async function getAccessToken(): Promise<string> {
+let inflightAccessToken: Promise<string> | null = null;
+
+async function getAccessToken(opts: { force?: boolean } = {}): Promise<string> {
+  if (inflightAccessToken) return inflightAccessToken;
+  const run = resolveAccessToken(opts);
+  inflightAccessToken = run;
+  try {
+    return await run;
+  } finally {
+    if (inflightAccessToken === run) inflightAccessToken = null;
+  }
+}
+
+async function resolveAccessToken(opts: { force?: boolean }): Promise<string> {
+  const fresh = await readAuthIfUsable(opts);
+  if (fresh) return fresh;
+
+  await assertAuthFileWritable(AUTH_PATH);
+
+  // Same advisory lock the grok CLI uses (auth.json.lock + flock).
+  // Held across the IdP call so we never double-spend a rotating refresh token.
+  return withAuthLock(AUTH_PATH, async () => {
+    const usable = await readAuthIfUsable(opts);
+    if (usable) return usable;
+
+    const { auth, entryName, entry } = await loadAuthEntry();
+    if (!entry.refresh_token || !entry.oidc_client_id) {
+      throw new Error(
+        'Access token expired and no refresh_token available — run `grok login` again to refresh ~/.grok/auth.json',
+      );
+    }
+
+    await assertAuthFileWritable(AUTH_PATH);
+
+    const resp = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: entry.refresh_token,
+        client_id: entry.oidc_client_id,
+      }),
+    });
+    const data = (await resp.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      error_description?: string;
+    };
+    if (!resp.ok || !data.access_token) {
+      throw new Error(
+        `Token refresh failed (HTTP ${resp.status}): ${data.error_description || 'unknown'} — run \`grok login\` again.`,
+      );
+    }
+
+    auth[entryName] = {
+      ...entry,
+      key: data.access_token,
+      refresh_token: data.refresh_token || entry.refresh_token,
+      expires_at: new Date(Date.now() + (data.expires_in ?? 21600) * 1000).toISOString(),
+    };
+    await persistAuth(auth);
+    return data.access_token;
+  });
+}
+
+async function readAuthIfUsable(opts: { force?: boolean }): Promise<string | null> {
+  const { auth, entry } = await loadAuthEntry();
+  const expiresAt = Date.parse(entry.expires_at || '');
+  const expired = !Number.isNaN(expiresAt) && expiresAt <= Date.now() + EXPIRY_SKEW_MS;
+  if (!opts.force && !expired) return extractToken(auth);
+  return null;
+}
+
+async function loadAuthEntry(): Promise<{ auth: any; entryName: string; entry: any }> {
   let auth: any;
   try {
     auth = JSON.parse(await fs.readFile(AUTH_PATH, 'utf8'));
@@ -153,7 +226,6 @@ async function getAccessToken(): Promise<string> {
       `Cannot read auth file (${AUTH_PATH}): ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-
   const entryName = Object.keys(auth || {}).find(
     (k) => auth[k] && typeof auth[k] === 'object' && typeof auth[k].key === 'string',
   );
@@ -162,52 +234,136 @@ async function getAccessToken(): Promise<string> {
       `No access token found in ${AUTH_PATH}. Run \`grok login\` (or the Grok CLI) to authenticate.`,
     );
   }
-  const entry = auth[entryName];
+  return { auth, entryName, entry: auth[entryName] };
+}
 
-  const expiresAt = Date.parse(entry.expires_at || '');
-  const expired = !Number.isNaN(expiresAt) && expiresAt <= Date.now() + EXPIRY_SKEW_MS;
-  if (!expired) return extractToken(auth);
-
-  if (!entry.refresh_token || !entry.oidc_client_id) {
+/** Exclusive flock on sibling auth.json.lock — same file the grok CLI uses. */
+async function withAuthLock<T>(authPath: string, fn: () => Promise<T>): Promise<T> {
+  const lockPath = path.join(path.dirname(authPath), 'auth.json.lock');
+  await fs.writeFile(lockPath, '', { encoding: 'utf8', flag: 'a' }).catch(() => undefined);
+  const unlock = await tryFlockExclusive(lockPath);
+  if (!unlock) {
     throw new Error(
-      'Access token expired and no refresh_token available — run `grok login` again to refresh ~/.grok/auth.json',
+      `Could not acquire grok auth.json.lock (${lockPath}) — another process is refreshing. Retry shortly; refusing to refresh to avoid invalidating grok login.`,
     );
   }
-
-  const resp = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: entry.refresh_token,
-      client_id: entry.oidc_client_id,
-    }),
-  });
-  const data = (await resp.json()) as {
-    access_token?: string;
-    refresh_token?: string;
-    expires_in?: number;
-    error_description?: string;
-  };
-  if (!resp.ok || !data.access_token) {
-    throw new Error(
-      `Token refresh failed (HTTP ${resp.status}): ${data.error_description || 'unknown'} — run \`grok login\` again.`,
-    );
-  }
-
-  // Refresh tokens rotate: persist the new pair or the next refresh breaks.
-  auth[entryName] = {
-    ...entry,
-    key: data.access_token,
-    refresh_token: data.refresh_token || entry.refresh_token,
-    expires_at: new Date(Date.now() + (data.expires_in ?? 21600) * 1000).toISOString(),
-  };
   try {
-    await fs.writeFile(AUTH_PATH, JSON.stringify(auth, null, 2), 'utf8');
-  } catch {
-    /* non-fatal: token still works for this run */
+    return await fn();
+  } finally {
+    await unlock();
   }
-  return data.access_token;
+}
+
+async function tryFlockExclusive(lockPath: string): Promise<(() => Promise<void>) | null> {
+  // Tests + macOS host: python fcntl. Docker Alpine: busybox flock.
+  // Both helpers exit when stdin closes so unlock cannot orphan a 24h sleeper
+  // that keeps auth.json.lock and blocks `grok` from refreshing.
+  const py = await spawnLock(
+    'python3',
+    [
+      '-c',
+      'import fcntl, os, sys\n'
+      + 'p=sys.argv[1]\n'
+      + 'f=open(p,"a+")\n'
+      + 'try:\n'
+      + '  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)\n'
+      + 'except BlockingIOError:\n'
+      + '  sys.exit(2)\n'
+      + 'os.write(1, b"locked\\n")\n'
+      + 'sys.stdin.read()\n',
+      lockPath,
+    ],
+  );
+  if (py) return py;
+  return spawnLock('flock', ['-xn', lockPath, '-c', 'sh -c "echo locked; exec cat"']);
+}
+
+function spawnLock(cmd: string, args: string[]): Promise<(() => Promise<void>) | null> {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'ignore'] });
+    } catch {
+      resolve(null);
+      return;
+    }
+    let settled = false;
+    const done = (unlock: (() => Promise<void>) | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(unlock);
+    };
+    const timer = setTimeout(() => {
+      child.stdin?.end();
+      child.kill('SIGTERM');
+      done(null);
+    }, 1500);
+    child.stdout?.once('data', () => {
+      clearTimeout(timer);
+      done(
+        () =>
+          new Promise((res) => {
+            const finish = () => res();
+            child.once('exit', finish);
+            child.stdin?.end();
+            setTimeout(() => child.kill('SIGTERM'), 200);
+          }),
+      );
+    });
+    child.once('error', () => {
+      clearTimeout(timer);
+      done(null);
+    });
+    child.once('exit', () => {
+      clearTimeout(timer);
+      done(null);
+    });
+  });
+}
+
+async function assertAuthFileWritable(filePath: string): Promise<void> {
+  const probe = `${filePath}.write-probe`;
+  try {
+    const fh = await fs.open(filePath, 'r+');
+    await fh.close();
+    // persistAuth writes a sibling .tmp then renames; a file-only :ro bind
+    // mount can leave the file itself looking writable while the directory is not.
+    await fs.writeFile(probe, '', { encoding: 'utf8', flag: 'w' });
+    await fs.unlink(probe);
+  } catch {
+    await fs.unlink(probe).catch(() => undefined);
+    throw new Error(
+      `Grok auth file is not writable (${filePath}). Remount ~/.grok read-write so rotated refresh tokens can be saved. Refusing to refresh (would invalidate grok login).`,
+    );
+  }
+}
+
+async function persistAuth(auth: unknown): Promise<void> {
+  const tmp = `${AUTH_PATH}.tmp`;
+  try {
+    await fs.writeFile(tmp, JSON.stringify(auth, null, 2), { encoding: 'utf8', mode: 0o600 });
+    await fs.rename(tmp, AUTH_PATH);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => undefined);
+    throw new Error(
+      `Refreshed Grok token but failed to write ${AUTH_PATH}: ${
+        err instanceof Error ? err.message : String(err)
+      }. Run \`grok login\` — the previous refresh token may already be invalid.`,
+    );
+  }
+}
+
+async function fetchBilling(token: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  return fetch(BILLING_URL, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      'User-Agent': 'quota-peek/1',
+    },
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
 }
 
 /** Best-effort token extraction from the auth.json written by the official Grok CLI. */
