@@ -6,17 +6,17 @@ services:
     restart: unless-stopped
     ports:
       - "5928:5928"
+    # Keys (GLM/VOLC/KIMI/MINIMAX _N accounts, plan labels, base URLs) come
+    # straight from .env — no per-key wiring here; add a key to .env and it
+    # just works. `environment` below overrides env_file on conflicts.
+    env_file: .env
     environment:
+      # Hard fail-fast: GLM is the only required key.
       GLM_API_KEY: ${GLM_API_KEY:?GLM_API_KEY is required — set it in .env or your shell}
-      GLM_BASE_URL: https://open.bigmodel.cn
+      # Container-internal secret paths (differ from host paths).
       CLAUDE_CREDENTIALS_PATH: /secrets/claude-creds.json
       CODEX_AUTH_PATH: /secrets/codex-auth.json
       GROK_AUTH_PATH: /secrets/grok/auth.json
-      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
-      MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://www.minimaxi.com}
-      KIMI_API_KEY: ${KIMI_API_KEY:-}
-      KIMI_API_KEY_2: ${KIMI_API_KEY_2:-}
-      KIMI_API_KEY_3: ${KIMI_API_KEY_3:-}
       KIMI_CREDENTIALS_PATH: /secrets/kimi-creds.json
     volumes:
       - ${CLAUDE_CREDENTIALS:-~/.claude/.credentials.json}:/secrets/claude-creds.json:ro
