@@ -11,15 +11,19 @@ services:
       GLM_BASE_URL: https://open.bigmodel.cn
       CLAUDE_CREDENTIALS_PATH: /secrets/claude-creds.json
       CODEX_AUTH_PATH: /secrets/codex-auth.json
-      GROK_AUTH_PATH: /secrets/grok-auth.json
+      GROK_AUTH_PATH: /secrets/grok/auth.json
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://www.minimaxi.com}
       KIMI_API_KEY: ${KIMI_API_KEY:-}
+      KIMI_API_KEY_2: ${KIMI_API_KEY_2:-}
+      KIMI_API_KEY_3: ${KIMI_API_KEY_3:-}
       KIMI_CREDENTIALS_PATH: /secrets/kimi-creds.json
     volumes:
       - ${CLAUDE_CREDENTIALS:-~/.claude/.credentials.json}:/secrets/claude-creds.json:ro
       - ${CODEX_AUTH:-~/.codex/auth.json}:/secrets/codex-auth.json:ro
-      - ${GROK_AUTH:-~/.grok/auth.json}:/secrets/grok-auth.json:ro
+      # Directory mount (rw): xAI refresh tokens rotate; write-back must hit the
+      # same file the grok CLI reads. A file-only :ro mount burns the login.
+      - ${GROK_DIR:-~/.grok}:/secrets/grok
       # Mounted read-only: in Docker prefer KIMI_API_KEY, since OAuth tokens
       # last ~15 min and refresh write-back needs a writable file.
       - ${KIMI_CREDENTIALS:-~/.kimi-code/credentials/kimi-code.json}:/secrets/kimi-creds.json:ro
