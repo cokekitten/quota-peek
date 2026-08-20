@@ -11,6 +11,9 @@ interface GlmLimit {
   unit?: number; // window-type code: 3 = 5h window, 6 = weekly
   percentage?: number;
   nextResetTime?: number;
+  /** CREDIT_LIMIT rows carry exact amounts: usage = total, currentValue = used. */
+  usage?: number;
+  currentValue?: number;
 }
 interface GlmData {
   level?: string;
@@ -99,15 +102,16 @@ async function fetchGlmAccount(account: GlmAccount): Promise<ProviderResult> {
   }
 }
 
-/** Keep only the 5h + weekly token windows; classify by the `unit` code.
- *  GLM's `unit` field is the authoritative window type (3 = 5h, 6 = weekly).
- *  We deliberately do NOT infer the window from nextResetTime — a weekly window
- *  can reset in under an hour when it's near its end, so reset time does not
- *  tell you the window length. */
+/** Keep only the 5h + weekly windows (token-denominated TOKENS_LIMIT rows and
+ *  credit-denominated CREDIT_LIMIT rows — same windows, different unit);
+ *  classify by the `unit` code. GLM's `unit` field is the authoritative window
+ *  type (3 = 5h, 6 = weekly). We deliberately do NOT infer the window from
+ *  nextResetTime — a weekly window can reset in under an hour when it's near
+ *  its end, so reset time does not tell you the window length. */
 function summarize(d?: GlmData): { level: string | null; planLabel: string | undefined; limits: UsageLimit[] } {
   const level = d?.level ? LEVEL_LABEL[d.level] || d.level : null;
   const limits = (d?.limits || [])
-    .filter((l) => l.type === 'TOKENS_LIMIT')
+    .filter((l) => l.type === 'TOKENS_LIMIT' || l.type === 'CREDIT_LIMIT')
     .map(normalizeLimit)
     .filter((l): l is UsageLimit => l !== null);
   return {
@@ -125,6 +129,12 @@ function normalizeLimit(l: GlmLimit): UsageLimit | null {
     kind,
     percent: typeof l.percentage === 'number' ? l.percentage : 0,
   };
+  // CREDIT_LIMIT rows are exact (credits used / window total); TOKENS_LIMIT
+  // rows only carry a percentage.
+  if (typeof l.usage === 'number' && typeof l.currentValue === 'number') {
+    out.total = l.usage;
+    out.used = l.currentValue;
+  }
   if (typeof l.nextResetTime === 'number') {
     out.resetAt = new Date(l.nextResetTime).toISOString();
   }
