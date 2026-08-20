@@ -108,7 +108,7 @@ async function fetchGlmAccount(account: GlmAccount): Promise<ProviderResult> {
  *  type (3 = 5h, 6 = weekly). We deliberately do NOT infer the window from
  *  nextResetTime — a weekly window can reset in under an hour when it's near
  *  its end, so reset time does not tell you the window length. */
-function summarize(d?: GlmData): { level: string | null; planLabel: string | undefined; limits: UsageLimit[] } {
+function summarize(d?: GlmData): { level: string | null; planLabel: string | undefined; planKey: string | undefined; limits: UsageLimit[] } {
   const level = d?.level ? LEVEL_LABEL[d.level] || d.level : null;
   const limits = (d?.limits || [])
     .filter((l) => l.type === 'TOKENS_LIMIT' || l.type === 'CREDIT_LIMIT')
@@ -117,6 +117,9 @@ function summarize(d?: GlmData): { level: string | null; planLabel: string | und
   return {
     level: level ?? null,
     planLabel: level ?? undefined,
+    // The API's raw tier ('max'/'pro'/'lite') is a verified capacity class:
+    // two same-tier accounts have equal window quotas, enabling exact merges.
+    planKey: d?.level || undefined,
     limits,
   };
 }

@@ -164,7 +164,10 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
         label,
         summary: {
           // GetCodingPlanUsage exposes no tier name — env override, else generic.
+          // planKey only from an explicit user label: the 'Coding Plan'
+          // display fallback is fabricated and proves nothing about capacity.
           planLabel: account.planLabel || 'Coding Plan',
+          planKey: account.planLabel,
           limits,
         },
         raw: data as unknown,
@@ -204,6 +207,7 @@ async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {
         label,
         summary: {
           planLabel: account.planLabel || result.PlanType,
+          planKey: account.planLabel || result.PlanType,
           limits,
           daily: result.AFPDaily ?? null,
           monthly: result.AFPMonthly ?? null,

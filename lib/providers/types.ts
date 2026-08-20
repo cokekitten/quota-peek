@@ -22,8 +22,15 @@ export interface UsageLimit {
   total?: number;
   /** ISO timestamp when the window resets, if known. */
   resetAt?: string;
-  /** True when percent is a cross-account estimate (accounts report % only). */
+  /** True when percent is a cross-account estimate (mixed/unknown plans). */
   estimated?: boolean;
+  /**
+   * Merge-internal provenance hint: verified capacity-class the row came
+   * from (see ProviderSummary.planKey). Equal keys imply equal window
+   * capacities, so mergeLimits can treat a mean of fractions as exact
+   * instead of flagging it estimated.
+   */
+  planKey?: string;
   /**
    * Merged rows only: quota-weighted expected consumption % by elapsed time,
    * computed at fetch time from each account's own reset clock. Lets the UI
@@ -47,6 +54,14 @@ export interface AccountUsage {
 export interface ProviderSummary {
   /** Display label for the plan, e.g. "GLM Max". */
   planLabel?: string;
+  /**
+   * Verified capacity-class identifier (e.g. GLM's API `level`, a real
+   * PlanType, or an explicit user-set label). Two accounts with the same
+   * planKey have equal window quotas by definition, so cross-account
+   * merges can be exact. Providers must NOT set this from a fabricated
+   * display fallback — unknown stays undefined and merges stay estimated.
+   */
+  planKey?: string;
   /** Normalized metric rows. */
   limits: UsageLimit[];
   /** Per-account breakdown when more than one account is configured. */

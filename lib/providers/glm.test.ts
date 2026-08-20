@@ -94,4 +94,28 @@ describe('fetchGlmUsage', () => {
     expect(merged5h?.percent).toBe(65);
     expect(merged5h?.estimated).toBe(true);
   });
+
+  it('same-plan accounts merge into an exact bar (no estimate flag)', async () => {
+    process.env.GLM_API_KEY = KEY;
+    process.env.GLM_API_KEY_2 = 'key-2';
+    mockGlm({
+      [KEY]: {
+        success: true,
+        data: { level: 'max', limits: [{ type: 'TOKENS_LIMIT', unit: 3, percentage: 32 }] },
+      },
+      ['key-2']: {
+        success: true,
+        data: {
+          level: 'max',
+          limits: [{ type: 'CREDIT_LIMIT', unit: 3, usage: 28000, currentValue: 21, percentage: 1 }],
+        },
+      },
+    });
+
+    const r = await fetchGlmUsage();
+    const merged5h = r.summary?.limits?.find((l) => l.kind === '5h');
+    // Exact fraction mean: (0.32 + 21/28000)/2 = 16.04% → 16, not flagged.
+    expect(merged5h?.percent).toBe(16);
+    expect(merged5h?.estimated).toBeUndefined();
+  });
 });

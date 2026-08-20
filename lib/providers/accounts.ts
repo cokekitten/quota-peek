@@ -106,7 +106,14 @@ export async function fetchMultiAccount<T>(
     label: meta.label,
     summary: {
       planLabel: plans.join(' + ') || undefined,
-      limits: mergeLimits(okIdx.flatMap((i) => results[i].summary?.limits ?? [])),
+      limits: mergeLimits(
+        okIdx.flatMap((i) =>
+          (results[i].summary?.limits ?? []).map((l) => ({
+            ...l,
+            planKey: results[i].summary?.planKey,
+          })),
+        ),
+      ),
       accounts: accountViews,
       partial: okIdx.length < results.length || undefined,
     },
@@ -116,8 +123,12 @@ export async function fetchMultiAccount<T>(
 /**
  * Combine per-account windows grouped by `kind`:
  * - every account reports used/total → exact weighted merge (Σused / Σtotal);
- * - otherwise → mean of percents, flagged `estimated` (never passed off as
- *   exact; the UI marks it with ≈).
+ * - otherwise, percentages → mean of fractions. When every row carries the
+ *   same verified planKey, window capacities are equal by definition, so
+ *   that mean IS the exact capacity-weighted utilization (Σused/Σtotal with
+ *   equal totals reduces to the mean of fractions) — reported as-is. Only
+ *   mixed/unknown plans make the mean a heuristic, flagged `estimated` (the
+ *   UI marks it with ≈).
  * resetAt is the earliest upcoming reset across accounts — when combined
  * capacity first starts recovering. Merged rows also carry `expectedPercent`:
  * the quota-weighted mean of each account's expected consumption by elapsed
@@ -145,10 +156,22 @@ export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
       merged.used = used;
       merged.total = total;
     } else {
-      merged.percent = clampPercent(
-        Math.round(group.reduce((s, l) => s + l.percent, 0) / group.length),
-      );
-      merged.estimated = true;
+      const samePlan = group.every((l) => !!l.planKey && l.planKey === group[0].planKey);
+      if (samePlan) {
+        // Equal capacities: use each row's best fraction (exact used/total
+        // where available — the API's integer percentage rounds up, e.g.
+        // 21/28000 → "1"), so the mean is the exact combined utilization.
+        merged.percent = clampPercent(
+          Math.round(
+            (group.reduce((s, l) => s + fraction(l), 0) / group.length) * 100,
+          ),
+        );
+      } else {
+        merged.percent = clampPercent(
+          Math.round(group.reduce((s, l) => s + l.percent, 0) / group.length),
+        );
+        merged.estimated = true;
+      }
     }
     const resets = group
       .map((l) => l.resetAt)
@@ -186,6 +209,13 @@ const KIND_DURATION_MS: Record<string, number> = {
   // APIs don't expose the window start — 30d is the closest uniform estimate.
   monthly: 30 * 24 * 3600e3,
 };
+
+/** Best available utilization fraction for a row, 0–1. */
+function fraction(l: UsageLimit): number {
+  return typeof l.used === 'number' && typeof l.total === 'number' && l.total > 0
+    ? l.used / l.total
+    : l.percent / 100;
+}
 
 function clampPercent(v: number): number {
   return Math.max(0, Math.min(100, v));

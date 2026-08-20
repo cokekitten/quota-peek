@@ -79,6 +79,35 @@ describe('mergeLimits', () => {
     expect(merged[0].used).toBeUndefined();
   });
 
+  it('treats a same-planKey percent mean as exact (equal window capacities)', () => {
+    const merged = mergeLimits([
+      { label: '5h Window', kind: '5h', percent: 33, planKey: 'max' },
+      { label: '5h Window', kind: '5h', percent: 1, planKey: 'max' },
+    ]);
+    expect(merged[0].percent).toBe(17);
+    expect(merged[0].estimated).toBeUndefined();
+  });
+
+  it('keeps the estimate flag when planKeys differ (unequal capacities)', () => {
+    const merged = mergeLimits([
+      { label: '5h Window', kind: '5h', percent: 33, planKey: 'max' },
+      { label: '5h Window', kind: '5h', percent: 1, planKey: 'pro' },
+    ]);
+    expect(merged[0].percent).toBe(17);
+    expect(merged[0].estimated).toBe(true);
+  });
+
+  it('uses exact fractions for same-planKey rows carrying used/total', () => {
+    // 21/28000 = 0.075% — the API's integer percent rounds up to 1; a naive
+    // percent mean would give (32+1)/2 = 17, the exact fraction mean is 16.
+    const merged = mergeLimits([
+      { label: '5h Window', kind: '5h', percent: 32, planKey: 'max' },
+      { label: '5h Window', kind: '5h', percent: 1, used: 21, total: 28000, planKey: 'max' },
+    ]);
+    expect(merged[0].percent).toBe(16);
+    expect(merged[0].estimated).toBeUndefined();
+  });
+
   it('derives a quota-weighted expectedPercent so merged rows keep pace deltas', () => {
     const now = Date.now();
     // 2.5h left of a 5h window → 50% expected; 1h left → 80% expected.
