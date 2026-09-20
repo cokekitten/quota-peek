@@ -1,10 +1,13 @@
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { ProviderResult, UsageLimit } from './types';
 import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accounts';
 
 const DEFAULT_CREDS_PATH = path.join(os.homedir(), '.kimi-code', 'credentials', 'kimi-code.json');
+// Env vars forming one account's config (either one marks it as usable).
+const ENV_VARS = ['KIMI_API_KEY', 'KIMI_CREDENTIALS_PATH'];
 const USAGE_URL = process.env.KIMI_USAGE_URL || 'https://api.kimi.com/coding/v1/usages';
 const TOKEN_URL = process.env.KIMI_TOKEN_URL || 'https://auth.kimi.com/api/oauth/token';
 // Public OAuth client_id used by the official Kimi Code CLI.
@@ -67,8 +70,13 @@ interface KimiAccount {
  * quotas and `summary.accounts` feeds the card's per-account toggle.
  */
 export function fetchKimiUsage(): Promise<ProviderResult> {
-  const accounts = readIndexedAccounts({
-    vars: ['KIMI_API_KEY', 'KIMI_CREDENTIALS_PATH'],
+  return fetchMultiAccount(kimiAccounts(), fetchKimiAccount, { provider: 'kimi', label: 'Kimi' });
+}
+
+/** Accounts as configured by KIMI_API_KEY(_N) / KIMI_CREDENTIALS_PATH(_N). */
+function kimiAccounts(): Array<{ key: string; config: KimiAccount }> {
+  return readIndexedAccounts({
+    vars: ENV_VARS,
   }).map(({ key, env }) => ({
     key,
     config: {
@@ -81,7 +89,17 @@ export function fetchKimiUsage(): Promise<ProviderResult> {
       credsPathEnv: accountEnvName('KIMI_CREDENTIALS_PATH', key),
     },
   }));
-  return fetchMultiAccount(accounts, fetchKimiAccount, { provider: 'kimi', label: 'Kimi' });
+}
+
+/**
+ * Configured = some account has either an API key or an OAuth credentials file
+ * that actually exists. With neither, the card would only ever say
+ * "Not configured", so the dashboard hides it by default.
+ */
+export function isConfigured(): boolean {
+  return kimiAccounts().some(
+    ({ config }) => Boolean(config.apiKey) || Boolean(config.credsPath && existsSync(config.credsPath)),
+  );
 }
 
 async function fetchKimiAccount(account: KimiAccount): Promise<ProviderResult> {

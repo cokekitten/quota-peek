@@ -76,10 +76,14 @@ interface VolcAccount {
   planLabel?: string;
 }
 
+// Env vars forming one account's config; the AK/SK pair is what marks an account.
+const ENV_VARS = ['VOLC_ACCESS_KEY', 'VOLC_SECRET_KEY', 'VOLC_PLAN_LABEL'];
+const TRIGGER_VARS = ['VOLC_ACCESS_KEY', 'VOLC_SECRET_KEY'];
+
 export function fetchVolcengineUsage(): Promise<ProviderResult> {
   const accounts = readIndexedAccounts({
-    vars: ['VOLC_ACCESS_KEY', 'VOLC_SECRET_KEY', 'VOLC_PLAN_LABEL'],
-    triggerVars: ['VOLC_ACCESS_KEY', 'VOLC_SECRET_KEY'],
+    vars: ENV_VARS,
+    triggerVars: TRIGGER_VARS,
   }).map(({ key, env }) => ({
     key,
     config: {
@@ -94,6 +98,13 @@ export function fetchVolcengineUsage(): Promise<ProviderResult> {
     provider: 'volcengine',
     label: 'Volcengine',
   });
+}
+
+/** Configured = at least one account has both an access key and a secret key. */
+export function isConfigured(): boolean {
+  return readIndexedAccounts({ vars: ENV_VARS, triggerVars: TRIGGER_VARS }).some(
+    (a) => Boolean(a.env.VOLC_ACCESS_KEY) && Boolean(a.env.VOLC_SECRET_KEY),
+  );
 }
 
 async function fetchVolcAccount(account: VolcAccount): Promise<ProviderResult> {

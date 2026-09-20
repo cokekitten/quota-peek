@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { ProviderResult, UsageLimit } from './types';
@@ -14,6 +15,11 @@ const TOKEN_URL = process.env.GROK_TOKEN_URL || 'https://auth.x.ai/oauth2/token'
 const TIMEOUT_MS = Number(process.env.GROK_TIMEOUT_MS || 15000);
 // Refresh a bit early so a request never rides on a borderline token.
 const EXPIRY_SKEW_MS = 60_000;
+
+/** Configured = the Grok CLI's auth store exists (`grok login` has run). */
+export function isConfigured(authPath: string = AUTH_PATH): boolean {
+  return existsSync(authPath);
+}
 
 /**
  * SuperGrok (xAI Grok) usage via the official Grok CLI billing endpoint.

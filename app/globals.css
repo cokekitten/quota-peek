@@ -196,6 +196,25 @@ footer {
   background: var(--green);
   box-shadow: var(--bar-glow);
 }
+/* "No key ×N" pill: reveals/hides providers that have no credentials.
+   Yellow dot while showing them — what you see is incomplete, by choice. */
+.pill.unc {
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  appearance: none;
+}
+.pill.unc .dot {
+  background: var(--muted);
+  box-shadow: none;
+}
+.pill.unc.on {
+  color: var(--text);
+}
+.pill.unc.on .dot {
+  background: var(--yellow);
+  box-shadow: var(--bar-glow);
+}
 
 button.refresh {
   background: var(--btn-bg);
@@ -240,6 +259,27 @@ main {
   padding: 28px;
 }
 
+/* Shown when every provider lacks credentials and hiding is on. */
+.empty {
+  display: grid;
+  place-items: center;
+  min-height: 40vh;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.empty .link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -270,6 +310,16 @@ main {
 }
 .card.error {
   border-color: var(--red);
+}
+/* A provider with no key isn't broken — just not set up. Neutral dashed
+   outline so it reads as a placeholder next to real failures. */
+.card.unconfigured {
+  border-color: var(--border);
+  border-style: dashed;
+  box-shadow: none;
+}
+.card.unconfigured::before {
+  display: none;
 }
 .card.loading {
   color: var(--muted);
@@ -317,6 +367,10 @@ main {
   color: var(--yellow);
   background: none;
   border-color: var(--yellow);
+}
+.card.unconfigured .card-head .tag {
+  color: var(--muted);
+  border-color: var(--border);
 }
 
 /* Multi-account toggle (Σ / 1 / 2 / …) */

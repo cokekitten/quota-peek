@@ -46,9 +46,14 @@ export interface ProviderResult {
   text?: string;
   raw?: unknown;
   error?: string;
+  /** True when the provider has no key / credential file at all (hidden by default). */
+  notConfigured?: boolean;
   /** True when this is cached data served because the live fetch failed. */
   stale?: boolean;
 }
+
+/** Per-provider "has credentials" split, from GET /api/config. */
+export type ConfiguredMap = Record<ProviderKey, boolean>;
 
 export interface ProviderResponse {
   ok: boolean;

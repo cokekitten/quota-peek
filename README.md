@@ -17,7 +17,8 @@ Quota Peek aggregates live usage/quota from major AI coding/subscription plans i
 - **Independent cards** — the dashboard fires one parallel request per provider; each card renders the instant its provider responds. The slowest never blocks the rest.
 - **Normalized metrics** — providers show their real windows (**5h Window** and/or **Weekly**, depending on what the plan actually has), with precise countdowns like `Resets in 4 hr 36 min` or `Resets in 1 d 6 hr`.
 - **Smart refresh** — manual refresh, optional auto-refresh (10 min), and automatic refresh when you refocus the tab after 3+ minutes.
-- **Resilient** — a provider that isn't configured or errors out degrades to an offline card; it never breaks the others. Claude's results are cached briefly and served stale on failure.
+- **Resilient** — a provider that errors out degrades to an offline card; it never breaks the others. Claude's results are cached briefly and served stale on failure.
+- **No dead cards** — a provider with no key / no credential file is hidden instead of occupying a slot; the `No key ×N` pill in the header reveals them (each one names the variable to set) and the choice is remembered in `localStorage`. A provider that **is** configured but failing — expired token, 429, network down — never hides, because that's the signal you opened the dashboard for.
 - **Zero infrastructure** — a single Next.js app. Run it, open it, done.
 
 ## 🚀 Quick start
@@ -123,7 +124,7 @@ docker compose up -d --build
 | **Kimi** | OAuth credentials from `~/.kimi-code/credentials/kimi-code.json` (auto-refreshed) → `api.kimi.com/coding/v1/usages`, or a Console API Key | Just be logged in via the Kimi Code CLI. Or set `KIMI_API_KEY` to an API Key from the Kimi Code Console. |
 | **Volcengine** (火山方舟) | AK/SK-signed (HMAC-SHA256 V4) `GetCodingPlanUsage` on the Ark control plane (falls back to `GetAFPUsage` for older Agent Plans) | Set `VOLC_ACCESS_KEY` / `VOLC_SECRET_KEY` from 火山引擎控制台 → 密钥管理. Session(5h)/weekly/monthly windows (5h + weekly shown). |
 
-A provider that isn't set up returns `ok: false` with a helpful `error` message — it shows an offline card and never breaks the others.
+A provider that isn't set up returns `ok: false` with `notConfigured: true` and a hint naming the variable to set — its card stays hidden until you turn on the `No key ×N` toggle, and never breaks the others.
 
 **MiniMax** uses the domestic Token Plan endpoint by default and reports the same 5h rolling + weekly windows as the other providers.
 

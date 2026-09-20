@@ -84,15 +84,21 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
     );
   }
 
-  // API answered but the provider itself failed → offline card with its error.
+  // API answered but the provider itself failed. No key at all renders as a
+  // neutral dashed card (the header toggle is what surfaces these); a real
+  // failure keeps the red offline card with its error.
   if (state.status === 'ready' && !state.data.ok) {
+    const unc = state.data.notConfigured;
     return (
-      <div className="card error">
+      <div className={`card error${unc ? ' unconfigured' : ''}`}>
         <div className="card-head">
           <span className="label">{label}</span>
-          <span className="tag">offline</span>
+          <span className="tag">{unc ? 'no key' : 'offline'}</span>
         </div>
-        <div className="text-note">{state.data.error || 'unknown error'}</div>
+        <div className="text-note">
+          {unc ? 'Not configured — ' : ''}
+          {state.data.error || 'unknown error'}
+        </div>
       </div>
     );
   }

@@ -81,6 +81,12 @@ export interface ProviderResult {
   text?: string;
   raw?: unknown;
   error?: string;
+  /**
+   * True when `error` means "no key / no credentials file at all" rather than
+   * "configured but the call failed". The dashboard hides these cards by
+   * default (header toggle shows them); real failures are never hidden.
+   */
+  notConfigured?: boolean;
   /** True when this is cached data served because the live fetch failed. */
   stale?: boolean;
 }
@@ -95,6 +101,16 @@ export interface ProviderResponse {
 export interface ProviderDef {
   key: ProviderKey;
   fn: () => Promise<ProviderResult>;
+  /**
+   * Cheap local check for "does this provider have anything to authenticate
+   * with?" — env vars and/or a credentials file on disk. Never touches the
+   * network. A provider that is configured but whose token expired or whose
+   * API is down still reports configured:true, so its offline card stays
+   * visible instead of being mistaken for an unconfigured one.
+   */
+  isConfigured: () => boolean;
+  /** What to set to make the provider usable, e.g. "set GLM_API_KEY". */
+  configHint: string;
 }
 
 export const PROVIDER_KEYS: ProviderKey[] = [

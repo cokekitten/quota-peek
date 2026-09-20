@@ -3,6 +3,9 @@ import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accoun
 
 const DEFAULT_BASE_URL = 'https://www.minimaxi.com';
 const REMAINS_PATH = '/v1/token_plan/remains';
+// Env vars forming one account's config; the API key is what marks an account.
+const ENV_VARS = ['MINIMAX_API_KEY', 'MINIMAX_BASE_URL', 'MINIMAX_PLAN_LABEL'];
+const TRIGGER_VARS = ['MINIMAX_API_KEY'];
 
 interface MinimaxModelRemain {
   start_time?: number;
@@ -58,8 +61,8 @@ interface MinimaxRemainsResponse {
  */
 export function fetchMinimaxUsage(): Promise<ProviderResult> {
   const accounts = readIndexedAccounts({
-    vars: ['MINIMAX_API_KEY', 'MINIMAX_BASE_URL', 'MINIMAX_PLAN_LABEL'],
-    triggerVars: ['MINIMAX_API_KEY'],
+    vars: ENV_VARS,
+    triggerVars: TRIGGER_VARS,
   }).map(({ key, env }) => ({
     key,
     config: {
@@ -76,6 +79,13 @@ export function fetchMinimaxUsage(): Promise<ProviderResult> {
     provider: 'minimax',
     label: 'MiniMax',
   });
+}
+
+/** Configured = at least one indexed MINIMAX_API_KEY(_N) is set. */
+export function isConfigured(): boolean {
+  return readIndexedAccounts({ vars: ENV_VARS, triggerVars: TRIGGER_VARS }).some((a) =>
+    Boolean(a.env.MINIMAX_API_KEY),
+  );
 }
 
 interface MinimaxAccount {

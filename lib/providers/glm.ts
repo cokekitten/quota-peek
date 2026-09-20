@@ -3,6 +3,9 @@ import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accoun
 
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn';
 const QUOTA_PATH = '/api/monitor/usage/quota/limit';
+// Env vars forming one account's config; the API key is what marks an account.
+const ENV_VARS = ['GLM_API_KEY', 'GLM_BASE_URL'];
+const TRIGGER_VARS = ['GLM_API_KEY'];
 
 const LEVEL_LABEL: Record<string, string> = { lite: 'Lite', pro: 'Pro', max: 'Max' };
 
@@ -33,8 +36,8 @@ interface GlmResponse {
  */
 export function fetchGlmUsage(): Promise<ProviderResult> {
   const accounts = readIndexedAccounts({
-    vars: ['GLM_API_KEY', 'GLM_BASE_URL'],
-    triggerVars: ['GLM_API_KEY'],
+    vars: ENV_VARS,
+    triggerVars: TRIGGER_VARS,
   }).map(({ key, env }) => ({
     key,
     config: {
@@ -44,6 +47,13 @@ export function fetchGlmUsage(): Promise<ProviderResult> {
     },
   }));
   return fetchMultiAccount(accounts, fetchGlmAccount, { provider: 'glm', label: 'GLM' });
+}
+
+/** Configured = at least one indexed GLM_API_KEY(_N) is set. */
+export function isConfigured(): boolean {
+  return readIndexedAccounts({ vars: ENV_VARS, triggerVars: TRIGGER_VARS }).some((a) =>
+    Boolean(a.env.GLM_API_KEY),
+  );
 }
 
 interface GlmAccount {
