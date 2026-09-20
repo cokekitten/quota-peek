@@ -8,7 +8,8 @@ export type ProviderKey =
   | 'supergrok'
   | 'minimax'
   | 'kimi'
-  | 'volcengine';
+  | 'volcengine'
+  | 'stepfun';
 
 export interface UsageLimit {
   label: string;

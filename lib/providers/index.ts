@@ -5,6 +5,7 @@ import { fetchSupergrokUsage, isConfigured as supergrokConfigured } from './supe
 import { fetchMinimaxUsage, isConfigured as minimaxConfigured } from './minimax';
 import { fetchKimiUsage, isConfigured as kimiConfigured } from './kimi';
 import { fetchVolcengineUsage, isConfigured as volcengineConfigured } from './volcengine';
+import { fetchStepfunUsage, isConfigured as stepfunConfigured } from './stepfun';
 import { PROVIDER_KEYS } from './types';
 import type { ProviderDef, ProviderKey, ProviderResult } from './types';
 
@@ -59,6 +60,13 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
     fn: fetchVolcengineUsage,
     isConfigured: volcengineConfigured,
     configHint: 'set VOLC_ACCESS_KEY / VOLC_SECRET_KEY (火山引擎控制台 → 密钥管理)',
+  },
+  stepfun: {
+    key: 'stepfun',
+    fn: fetchStepfunUsage,
+    isConfigured: stepfunConfigured,
+    configHint:
+      'set STEPFUN_COOKIE (Cookie header from a logged-in platform.stepfun.com) or STEPFUN_TOKEN (Oasis-Token)',
   },
 };
 

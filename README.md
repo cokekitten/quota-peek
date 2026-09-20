@@ -1,6 +1,6 @@
 # ⚡ Quota Peek
 
-> One dashboard for your AI coding-plan usage — **Claude Code**, **Codex**, **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), and **Kimi** (Kimi Code 会员) in a single glance.
+> One dashboard for your AI coding-plan usage — **Claude Code**, **Codex**, **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), **Kimi** (Kimi Code 会员), **Volcengine** and **StepFun** (阶跃星辰 Step Plan) in a single glance.
 
 ![Quota Peek](docs/screenshot.png)
 
@@ -13,7 +13,7 @@ Quota Peek aggregates live usage/quota from major AI coding/subscription plans i
 
 ## ✨ Features
 
-- **Seven providers, one view** — Claude Code, Codex (ChatGPT), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), and Volcengine (火山方舟 Coding Plan), side by side.
+- **Eight providers, one view** — Claude Code, Codex (ChatGPT), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), Volcengine (火山方舟 Coding Plan), and StepFun (阶跃星辰 Step Plan), side by side.
 - **Independent cards** — the dashboard fires one parallel request per provider; each card renders the instant its provider responds. The slowest never blocks the rest.
 - **Normalized metrics** — providers show their real windows (**5h Window** and/or **Weekly**, depending on what the plan actually has), with precise countdowns like `Resets in 4 hr 36 min` or `Resets in 1 d 6 hr`.
 - **Smart refresh** — manual refresh, optional auto-refresh (10 min), and automatic refresh when you refocus the tab after 3+ minutes.
@@ -123,6 +123,7 @@ docker compose up -d --build
 | **MiniMax** (国内) | Subscription Key (Token Plan) via `Authorization: Bearer` to `https://www.minimaxi.com/v1/token_plan/remains` | Set `MINIMAX_API_KEY` to your Token Plan Subscription Key from minimaxi.com. Defaults to domestic endpoint. |
 | **Kimi** | OAuth credentials from `~/.kimi-code/credentials/kimi-code.json` (auto-refreshed) → `api.kimi.com/coding/v1/usages`, or a Console API Key | Just be logged in via the Kimi Code CLI. Or set `KIMI_API_KEY` to an API Key from the Kimi Code Console. |
 | **Volcengine** (火山方舟) | AK/SK-signed (HMAC-SHA256 V4) `GetCodingPlanUsage` on the Ark control plane (falls back to `GetAFPUsage` for older Agent Plans) | Set `VOLC_ACCESS_KEY` / `VOLC_SECRET_KEY` from 火山引擎控制台 → 密钥管理. Session(5h)/weekly/monthly windows (5h + weekly shown). |
+| **StepFun** (阶跃星辰) | Session-authenticated `QueryStepPlanRateLimit` + `GetStepPlanStatus` on platform.stepfun.com (`oasis-appid/platform/webid` headers) | Paste the `cookie` header of a logged-in platform.stepfun.com into `STEPFUN_COOKIE` (or just the Oasis-Token into `STEPFUN_TOKEN`). The `sk-` API key does **not** work — it only sees your top-up balance. |
 
 A provider that isn't set up returns `ok: false` with `notConfigured: true` and a hint naming the variable to set — its card stays hidden until you turn on the `No key ×N` toggle, and never breaks the others.
 
@@ -138,9 +139,11 @@ See [`.env.example`](.env.example) for the full list. The only one you must set 
 
 **Kimi** works out of the box if you're logged in via the Kimi Code CLI (it reads `~/.kimi-code/credentials/kimi-code.json` and refreshes expired tokens, writing the rotated pair back). Alternatively set `KIMI_API_KEY` to an API Key from the Kimi Code Console — recommended for Docker.
 
+**StepFun** needs a *session*, not an API key: `QueryStepPlanRateLimit` answers only to the web console's cookies. Open `platform.stepfun.com/plan-usage` while logged in, copy the `cookie` request header of any Dashboard API call into `STEPFUN_COOKIE`, or just the `Oasis-Token` value into `STEPFUN_TOKEN`. In the latter case the mandatory `Oasis-Webid` header is decoded from the token's own `device_id` claim (mismatch ⇒ `oasis-token is embezzled`); paste the paired `access...refresh` form and expired access tokens get refreshed automatically, in memory only. Credit-denominated plans (`plan_family: 2`) report one **Monthly Credit** row instead of 5h/weekly windows — the two billing shapes are told apart by the response payload, since `plan_family` alone lies.
+
 ### Multiple accounts (key-based providers)
 
-GLM, MiniMax, Kimi and Volcengine support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
+GLM, MiniMax, Kimi, Volcengine and StepFun support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
 
 ## 🏗️ How it works
 
@@ -175,7 +178,7 @@ components/
   ProviderCard.tsx                # 'use client' — per-card state, bars, countdowns
   types.ts                        # client-side response types
 lib/providers/
-  claude.ts · codex.ts · glm.ts · supergrok.ts · minimax.ts · kimi.ts   # server-only providers
+  claude.ts · codex.ts · glm.ts · supergrok.ts · minimax.ts · kimi.ts · volcengine.ts · stepfun.ts   # server-only providers
   index.ts                        # registry + fetchOneUsage()
   types.ts                        # shared domain types
 ```

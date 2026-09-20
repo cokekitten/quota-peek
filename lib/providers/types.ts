@@ -7,7 +7,8 @@ export type ProviderKey =
   | 'supergrok'
   | 'minimax'
   | 'kimi'
-  | 'volcengine';
+  | 'volcengine'
+  | 'stepfun';
 
 export interface UsageLimit {
   /** Human label for the metric, e.g. "Primary · 5h window". */
@@ -121,4 +122,5 @@ export const PROVIDER_KEYS: ProviderKey[] = [
   'minimax',
   'kimi',
   'volcengine',
+  'stepfun',
 ];

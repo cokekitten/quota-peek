@@ -23,6 +23,12 @@ const getSlots = (provider: ProviderKey) => {
       { kind: 'monthly', label: 'Monthly' },
     ] as const;
   }
+  // StepFun plans come in two shapes (rolling 5h/weekly windows *or* a monthly
+  // credit pool) that the response only reveals per account, so this card is
+  // fully data-driven — the provider names every row it returns.
+  if (provider === 'stepfun') {
+    return [] as const;
+  }
   return [
     { kind: '5h', label: '5h Window' },
     { kind: 'weekly', label: 'Weekly' },
@@ -303,4 +309,5 @@ const LABELS: Record<ProviderKey, string> = {
   minimax: 'MiniMax',
   kimi: 'Kimi',
   volcengine: 'Volcengine',
+  stepfun: 'StepFun',
 };
