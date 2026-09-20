@@ -16,3 +16,4 @@ next-env.d.ts
 # StepFun rotated session cache (contains a live token pair) — never commit
 .stepfun-session.json
 stepfun-session/
+.env.bak*

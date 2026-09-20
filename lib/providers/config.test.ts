@@ -50,6 +50,9 @@ afterEach(() => {
 describe('key-based provider probes', () => {
   it('report unconfigured with no keys at all', () => {
     clearProviderEnv();
+    // Kimi falls back to the Kimi Code CLI's own credential file, which exists
+    // on machines that use that CLI — pin it away to test "nothing configured".
+    setEnv('KIMI_CREDENTIALS_PATH', '/tmp/quota-peek-definitely-missing.json');
     expect(glmConfigured()).toBe(false);
     expect(minimaxConfigured()).toBe(false);
     expect(kimiConfigured()).toBe(false);
