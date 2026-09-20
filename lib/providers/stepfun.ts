@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { ProviderResult, UsageLimit } from './types';
 import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accounts';
 
@@ -228,6 +231,13 @@ function deviceIdFromJwt(jwt: string): string | undefined {
   }
 }
 
+/** Put a freshly issued token pair back into the credential it came from. */
+function swapToken(credential: string, pair: string): string {
+  return /oasis-token=/i.test(credential)
+    ? credential.replace(/(Oasis-Token=)[^;]+/i, `$1${pair}`)
+    : pair;
+}
+
 /** 10-digit unix seconds (string or number) → ISO, or undefined for 0/absent. */
 function isoFromUnix(v: Loose): string | undefined {
   const n = v === undefined || v === null || v === '' ? NaN : Number(v);
@@ -244,6 +254,49 @@ function percentUsed(leftRate: number): number {
 /** In-memory refreshed pairs, keyed by the credential we were given. */
 const refreshed = new Map<string, string>();
 
+/**
+ * Where rotated pairs survive. StepFun rotates the refresh token on every
+ * renewal, so losing a pair means losing the session for good: the pasted
+ * cookie still carries the spent half. Without this, every container restart
+ * would demand a fresh paste — hence the default, plus the writable mount in
+ * docker-compose.yml. This is *our* cache, not a CLI credential file, so
+ * writing it back cannot burn anyone's login (the SuperGrok :ro lesson).
+ *
+ * Pairs are keyed by a fingerprint of the credential they came from, so a
+ * multi-account card never applies account 1's renewed token to account 2.
+ */
+function sessionFile(): string {
+  return process.env.STEPFUN_SESSION_FILE || path.join(process.cwd(), '.stepfun-session.json');
+}
+
+function sessionKey(credential: string): string {
+  return createHash('sha256').update(credential).digest('hex').slice(0, 16);
+}
+
+function readSessionMap(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(sessionFile(), 'utf8')) as { pairs?: unknown };
+    return parsed && typeof parsed.pairs === 'object' && parsed.pairs
+      ? (parsed.pairs as Record<string, string>)
+      : {};
+  } catch {
+    return {}; // missing, unreadable or malformed → the pasted credentials stand
+  }
+}
+
+function persistPair(credential: string, pair: string) {
+  const map = { ...readSessionMap(), [sessionKey(credential)]: pair };
+  try {
+    fs.writeFileSync(
+      sessionFile(),
+      JSON.stringify({ pairs: map, savedAt: new Date().toISOString() }),
+      { mode: 0o600 },
+    );
+  } catch {
+    /* read-only mount or unwritable path: keep serving from memory */
+  }
+}
+
 async function fetchStepfunAccount(account: StepFunAccount): Promise<ProviderResult> {
   const provider = 'stepfun' as const;
   const label = 'StepFun';
@@ -253,7 +306,11 @@ async function fetchStepfunAccount(account: StepFunAccount): Promise<ProviderRes
   if (!raw) {
     return fail(`Neither ${account.tokenEnv} nor ${account.cookieEnv} is set`);
   }
-  let cred = parseCredential(raw, account.webid);
+  // Access tokens live ~30 min while the pasted credential stays in .env, so a
+  // pair renewed in an earlier round (this process, or a previous container)
+  // is used before we ever hit an auth error.
+  const cachedPair = refreshed.get(raw) ?? readSessionMap()[sessionKey(raw)];
+  let cred = parseCredential(cachedPair ? swapToken(raw, cachedPair) : raw, account.webid);
 
   const call = async (path: string) => {
     const resp = await fetch(`${account.baseUrl}${path}`, {
@@ -280,19 +337,24 @@ async function fetchStepfunAccount(account: StepFunAccount): Promise<ProviderRes
 
   let res = await call(RATE_LIMIT_PATH);
 
-  // Expired access token: with the refresh half we can renew it. Cookie-only
-  // credentials cannot be refreshed here — re-paste from the browser instead.
-  if (isAuthError(res.status, res.body) && !account.cookie) {
-    const pair = cred.token.includes('...') ? cred.token : refreshed.get(raw);
-    if (pair) {
-      try {
-        const fresh = await refreshToken(account, pair, cred.webid);
-        refreshed.set(raw, fresh);
-        cred = parseCredential(fresh, account.webid);
-        res = await call(RATE_LIMIT_PATH);
-      } catch (err) {
-        return fail(err instanceof Error ? err.message : String(err));
-      }
+  // Expired access token: with the refresh half we can renew it — also when it
+  // arrived inside a full cookie (the pair is re-inserted, other cookies stay).
+  // A credential without a refresh half can't be renewed: re-paste instead.
+  if (isAuthError(res.status, res.body)) {
+    const pair = cred.token.includes('...') ? cred.token : cachedPair;
+    if (!pair) {
+      return fail(
+        `Session expired (HTTP ${res.status}) and no refresh token in the credential — re-paste the cookie from platform.stepfun.com`,
+      );
+    }
+    try {
+      const fresh = await refreshToken(account, pair, cred.webid);
+      refreshed.set(raw, fresh);
+      persistPair(raw, fresh);
+      cred = parseCredential(swapToken(raw, fresh), account.webid);
+      res = await call(RATE_LIMIT_PATH);
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -369,21 +431,25 @@ async function fetchStepfunAccount(account: StepFunAccount): Promise<ProviderRes
   return { ok: true, provider, label, summary: { planLabel, planKey, limits } };
 }
 
-/** Exchange an `access...refresh` pair for a fresh pair. */
+/**
+ * Exchange the paired `access...refresh` credential for a fresh access token.
+ * Like the login/refresh calls of the console itself, the body is an empty
+ * `{}` — the session travels entirely in the Oasis-Token header + cookie, and
+ * protobuf-JSON bodies reject a stray field.
+ */
 async function refreshToken(account: StepFunAccount, pair: string, webid?: string) {
-  const [accessToken] = pair.split('...');
-  const refreshValue = pair.split('...')[1] || pair;
   const cred = parseCredential(pair, webid);
   const resp = await fetch(`${account.baseUrl}${REFRESH_PATH}`, {
     method: 'POST',
-    body: JSON.stringify({ refreshToken: refreshValue }),
+    body: '{}',
     headers: {
       'content-type': 'application/json',
       'oasis-appid': APP_ID,
       'oasis-platform': 'web',
       'oasis-webid': cred.webid || DEFAULT_WEBID,
       'user-agent': USER_AGENT,
-      cookie: `Oasis-Token=${accessToken}`,
+      'Oasis-Token': cred.token,
+      cookie: cred.webid ? `Oasis-Token=${cred.token}; Oasis-Webid=${cred.webid}` : `Oasis-Token=${cred.token}`,
     },
     cache: 'no-store',
     signal: AbortSignal.timeout(TIMEOUT_MS),

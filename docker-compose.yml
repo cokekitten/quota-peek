@@ -18,6 +18,10 @@ services:
       CODEX_AUTH_PATH: /secrets/codex-auth.json
       GROK_AUTH_PATH: /secrets/grok/auth.json
       KIMI_CREDENTIALS_PATH: /secrets/kimi-creds.json
+      # StepFun: Step Plan refresh tokens rotate on every renewal, so the rotated
+      # pair must survive a recreate — losing it kills the session. Writable dir
+      # (this is our cache file, not a CLI credential file).
+      STEPFUN_SESSION_FILE: /secrets/stepfun/session.json
     volumes:
       - ${CLAUDE_CREDENTIALS:-~/.claude/.credentials.json}:/secrets/claude-creds.json:ro
       - ${CODEX_AUTH:-~/.codex/auth.json}:/secrets/codex-auth.json:ro
@@ -27,3 +31,5 @@ services:
       # Mounted read-only: in Docker prefer KIMI_API_KEY, since OAuth tokens
       # last ~15 min and refresh write-back needs a writable file.
       - ${KIMI_CREDENTIALS:-~/.kimi-code/credentials/kimi-code.json}:/secrets/kimi-creds.json:ro
+      # StepFun session cache dir (created on first refresh, 0600 file inside).
+      - ./stepfun-session:/secrets/stepfun

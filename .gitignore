@@ -12,3 +12,7 @@ next-env.d.ts
 
 # Brainstorm/visual-companion session files
 .superpowers/
+
+# StepFun rotated session cache (contains a live token pair) — never commit
+.stepfun-session.json
+stepfun-session/

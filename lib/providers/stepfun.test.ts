@@ -1,6 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import {
   creditLeftRate,
   fetchStepfunUsage,
@@ -10,7 +13,13 @@ import {
   webIdFromToken,
 } from './stepfun';
 
-const ENV_VARS = ['STEPFUN_TOKEN', 'STEPFUN_COOKIE', 'STEPFUN_WEBID', 'STEPFUN_BASE_URL'];
+const ENV_VARS = [
+  'STEPFUN_TOKEN',
+  'STEPFUN_COOKIE',
+  'STEPFUN_WEBID',
+  'STEPFUN_BASE_URL',
+  'STEPFUN_SESSION_FILE',
+];
 const saved = new Map<string, string | undefined>(ENV_VARS.map((v) => [v, process.env[v]]));
 
 function setEnv(name: string, value?: string) {
@@ -33,7 +42,9 @@ afterEach(() => {
 function jwt(deviceId: string) {
   const b64 = (o: unknown) =>
     Buffer.from(JSON.stringify(o)).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  return `${b64({ alg: 'none' })}.${b64({ device_id: deviceId })}.sig`;
+  // The id goes in the signature too: inside the payload it is only base64, so
+  // a stub asserting "this cookie carries that token" could not see it.
+  return `${b64({ alg: 'none' })}.${b64({ device_id: deviceId })}.sig-${deviceId}`;
 }
 
 describe('credential parsing', () => {
@@ -234,5 +245,139 @@ describe('fetchStepfunUsage', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('no step plan subscription');
     expect(result.notConfigured).toBeUndefined();
+  });
+});
+
+// ------------------------------------------- refresh of an expired access token
+
+const sessionDir = mkdtempSync(path.join(tmpdir(), 'qp-stepfun-session-'));
+const sessionPath = path.join(sessionDir, 'session.json');
+
+describe('access-token refresh', () => {
+  let authServer: http.Server;
+  let authBase: string;
+  const stalePair = `${jwt('dev-stale')}...${jwt('dev-stale-webid')}`;
+  const freshPair = `${jwt('dev-fresh')}...${jwt('dev-fresh-webid')}`;
+  const hits = { rateLimit: [] as string[], refresh: 0 };
+
+  beforeAll(async () => {
+    authServer = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        res.setHeader('content-type', 'application/json');
+        if (req.url?.includes('QueryStepPlanRateLimit')) {
+          const cookie = String(req.headers.cookie ?? '');
+          hits.rateLimit.push(cookie);
+          // The pasted access token is ~30 min old by the time the dashboard
+          // refreshes, so anything but a freshly minted token gets rejected.
+          if (!cookie.includes('dev-fresh')) {
+            res.statusCode = 401;
+            return void res.end('{"message":"auth failed: token expired"}');
+          }
+          return void res.end(
+            JSON.stringify({
+              status: 1,
+              five_hour_usage_left_rate: 0.5,
+              weekly_usage_left_rate: 0.5,
+              five_hour_usage_reset_time: String(Math.floor(Date.now() / 1000) + 3600),
+              weekly_usage_reset_time: String(Math.floor(Date.now() / 1000) + 86400),
+            }),
+          );
+        }
+        if (req.url?.includes('RefreshToken')) {
+          hits.refresh += 1;
+          // The console sends an empty body and carries the session in headers.
+          expect(body).toBe('{}');
+          expect(String(req.headers['oasis-token'])).toContain('...');
+          return void res.end(
+            JSON.stringify({ accessToken: { raw: freshPair.split('...')[0] }, refreshToken: { raw: freshPair.split('...')[1] } }),
+          );
+        }
+        if (req.url?.includes('GetStepPlanStatus')) return void res.end('{}');
+        res.statusCode = 404;
+        res.end('{}');
+      });
+    });
+    await new Promise<void>((r) => authServer.listen(0, '127.0.0.1', r));
+    authBase = `http://127.0.0.1:${(authServer.address() as AddressInfo).port}`;
+  });
+
+  afterAll(() => new Promise<void>((r, rej) => authServer.close((e) => (e ? rej(e) : r()))));
+
+  it('renews the pair and re-inserts it into the same cookie', async () => {
+    clearEnv();
+    setEnv('STEPFUN_COOKIE', `Oasis-Token=${stalePair}; INGRESSCOOKIE=keepme`);
+    setEnv('STEPFUN_BASE_URL', authBase);
+    setEnv('STEPFUN_SESSION_FILE', sessionPath);
+    hits.rateLimit.length = 0;
+    hits.refresh = 0;
+
+    const result = await fetchStepfunUsage();
+    expect(result.ok, `error was: ${result.error}`).toBe(true);
+    expect(result.summary?.limits?.[0]?.percent).toBe(50);
+    expect(hits.refresh).toBe(1);
+    expect(hits.rateLimit).toHaveLength(2);
+    // Retried with the new access token…
+    expect(hits.rateLimit[1]).toContain('dev-fresh');
+    // …while the rest of the pasted cookie (and its length) is untouched.
+    expect(hits.rateLimit[1]).toContain('INGRESSCOOKIE=keepme');
+    expect(hits.rateLimit[1].length - hits.rateLimit[0].length).toBeLessThan(200);
+
+    // The rotated pair must survive the process: refresh tokens are single use,
+    // so the spent half left in .env is worth nothing after a restart.
+    const saved = JSON.parse(readFileSync(sessionPath, 'utf8')) as { pairs: Record<string, string> };
+    expect(Object.values(saved.pairs)).toEqual([freshPair]);
+    expect(existsSync(sessionPath)).toBe(true);
+  });
+
+  it('reuses the persisted pair on a cold start without refreshing again', async () => {
+    clearEnv();
+    setEnv('STEPFUN_COOKIE', `Oasis-Token=${stalePair}; INGRESSCOOKIE=keepme`);
+    setEnv('STEPFUN_BASE_URL', authBase);
+    setEnv('STEPFUN_SESSION_FILE', sessionPath); // written by the test above
+    hits.rateLimit.length = 0;
+    hits.refresh = 0;
+
+    const result = await fetchStepfunUsage();
+    expect(result.ok, `error was: ${result.error}`).toBe(true);
+    expect(hits.refresh).toBe(0); // straight to the API with the persisted pair
+    expect(hits.rateLimit).toHaveLength(1);
+    expect(hits.rateLimit[0]).toContain('dev-fresh');
+  });
+
+  it('never applies one account’s persisted pair to another account', async () => {
+    clearEnv();
+    // Account 2 is the *same* credential the session file holds a pair for;
+    // account 1 is a different one and must not be handed that pair.
+    setEnv('STEPFUN_COOKIE', `Oasis-Token=${jwt('dev-other')}; INGRESSCOOKIE=keepme-a`);
+    setEnv('STEPFUN_COOKIE_2', `Oasis-Token=${stalePair}; INGRESSCOOKIE=keepme`);
+    setEnv('STEPFUN_BASE_URL', authBase);
+    setEnv('STEPFUN_SESSION_FILE', sessionPath); // holds account 2's pair only
+    hits.rateLimit.length = 0;
+    hits.refresh = 0;
+
+    const result = await fetchStepfunUsage();
+    // Account 1 has no cached pair and none to refresh with; account 2 rides on
+    // the persisted one — so the card reports account 1's problem only.
+    expect(result.ok).toBe(true);
+    expect(result.summary?.partial).toBe(true);
+    expect(result.summary?.accounts?.[0]).toMatchObject({ ok: false });
+    expect(result.summary?.accounts?.[0]?.error).toContain('re-paste');
+    expect(result.summary?.accounts?.[1]?.ok).toBe(true);
+    expect(hits.refresh).toBe(0);
+    // Account 1's call went out with its own token, untouched by the cache.
+    expect(hits.rateLimit.some((c) => c.includes('keepme-a') && !c.includes('dev-fresh'))).toBe(true);
+  });
+
+  it('tells the user to re-paste when the credential cannot be renewed', async () => {
+    clearEnv();
+    setEnv('STEPFUN_COOKIE', `Oasis-Token=${jwt('dev-unrenewable')}; INGRESSCOOKIE=keepme`);
+    setEnv('STEPFUN_BASE_URL', authBase);
+    setEnv('STEPFUN_SESSION_FILE', path.join(sessionDir, 'nothing-here.json'));
+
+    const result = await fetchStepfunUsage();
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('re-paste');
   });
 });
