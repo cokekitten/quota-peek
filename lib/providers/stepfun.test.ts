@@ -190,8 +190,8 @@ describe('fetchStepfunUsage', () => {
     expect(result.summary?.planLabel).toBe('Plus');
     expect(result.summary?.planKey).toBe('Plus');
     expect(result.summary?.limits).toMatchObject([
-      { kind: '5h', label: '5h Window', percent: 0 },
-      { kind: 'weekly', label: 'Weekly', percent: 25 },
+      { kind: '5h', label: '5h Window', percent: 0.2 }, // 0.1876% → shows as 0.2, not 0
+      { kind: 'weekly', label: 'Weekly', percent: 25 }, // exactly a quarter used
     ]);
     expect(result.summary?.limits?.[0].resetAt).toMatch(/T/);
 
@@ -230,7 +230,7 @@ describe('fetchStepfunUsage', () => {
     const result = await fetchStepfunUsage();
     expect(result.ok).toBe(true);
     expect(result.summary?.limits).toHaveLength(1);
-    expect(result.summary?.limits?.[0]).toMatchObject({ kind: 'monthly', label: 'Monthly Credit', percent: 38 });
+    expect(result.summary?.limits?.[0]).toMatchObject({ kind: 'monthly', label: 'Monthly Credit', percent: 37.5 });
     expect(result.summary?.planLabel).toBeUndefined();
   });
 

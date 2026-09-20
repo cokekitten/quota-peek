@@ -245,8 +245,13 @@ function isoFromUnix(v: Loose): string | undefined {
   return new Date(n * 1000).toISOString();
 }
 
+/**
+ * Used percentage, at one decimal rather than a whole number. A credit pool of
+ * this size moves 1% per ~40 credits, so integer rounding lets real usage sit
+ * at "0%" for hours and then jump — and every other card shows one decimal.
+ */
 function percentUsed(leftRate: number): number {
-  return Math.max(0, Math.min(100, Math.round((1 - leftRate) * 100)));
+  return Math.max(0, Math.min(100, Math.round((1 - leftRate) * 1000) / 10));
 }
 
 // ---------------------------------------------------------------------- fetch
