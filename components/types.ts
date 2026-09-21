@@ -9,7 +9,9 @@ export type ProviderKey =
   | 'minimax'
   | 'kimi'
   | 'volcengine'
-  | 'stepfun';
+  | 'stepfun'
+  | 'deepseek'
+  | 'mimo';
 
 export interface UsageLimit {
   label: string;
@@ -17,6 +19,8 @@ export interface UsageLimit {
   percent: number;
   used?: number;
   total?: number;
+  /** Display unit for the absolute used/total numbers, e.g. '¥' or 'cr'. */
+  unit?: string;
   resetAt?: string;
   estimated?: boolean;
   expectedPercent?: number;

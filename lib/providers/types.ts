@@ -8,7 +8,9 @@ export type ProviderKey =
   | 'minimax'
   | 'kimi'
   | 'volcengine'
-  | 'stepfun';
+  | 'stepfun'
+  | 'deepseek'
+  | 'mimo';
 
 export interface UsageLimit {
   /** Human label for the metric, e.g. "Primary · 5h window". */
@@ -38,6 +40,8 @@ export interface UsageLimit {
    * show a pace delta even though merged windows don't share one reset time.
    */
   expectedPercent?: number;
+  /** Display unit for the absolute used/total numbers, e.g. '¥' or 'cr'. */
+  unit?: string;
   /** Optional extra detail, e.g. per-model breakdown. */
   detail?: string;
 }
@@ -123,4 +127,6 @@ export const PROVIDER_KEYS: ProviderKey[] = [
   'kimi',
   'volcengine',
   'stepfun',
+  'deepseek',
+  'mimo',
 ];

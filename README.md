@@ -1,6 +1,6 @@
 # ⚡ Quota Peek
 
-> One dashboard for your AI coding-plan usage — **Claude Code**, **Codex**, **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), **Kimi** (Kimi Code 会员), **Volcengine** and **StepFun** (阶跃星辰 Step Plan) in a single glance.
+> One dashboard for your AI coding-plan usage — **Claude Code**, **Codex**, **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), **Kimi** (Kimi Code 会员), **Volcengine**, **StepFun** (阶跃星辰 Step Plan), **DeepSeek** and **Xiaomi MiMo** (小米 Token Plan) in a single glance.
 
 ![Quota Peek](docs/screenshot.png)
 
@@ -13,7 +13,7 @@ Quota Peek aggregates live usage/quota from major AI coding/subscription plans i
 
 ## ✨ Features
 
-- **Eight providers, one view** — Claude Code, Codex (ChatGPT), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), Volcengine (火山方舟 Coding Plan), and StepFun (阶跃星辰 Step Plan), side by side.
+- **Ten providers, one view** — Claude Code, Codex (ChatGPT), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), Volcengine (火山方舟 Coding Plan), StepFun (阶跃星辰 Step Plan), DeepSeek (余额 + 本月已用) and Xiaomi MiMo (小米 Token Plan), side by side.
 - **Independent cards** — the dashboard fires one parallel request per provider; each card renders the instant its provider responds. The slowest never blocks the rest.
 - **Normalized metrics** — providers show their real windows (**5h Window** and/or **Weekly**, depending on what the plan actually has), with precise countdowns like `Resets in 4 hr 36 min` or `Resets in 1 d 6 hr`.
 - **Smart refresh** — manual refresh, optional auto-refresh (10 min), and automatic refresh when you refocus the tab after 3+ minutes.
@@ -62,6 +62,10 @@ docker run -d --name quota-peek -p 5928:5928 \
   -e GROK_AUTH_PATH="/secrets/grok/auth.json" \
   -e MINIMAX_API_KEY="your-minimax-subscription-key" \
   -e KIMI_API_KEY="your-kimi-code-api-key" \
+  -e DEEPSEEK_API_KEY="sk-..." \
+  -e DEEPSEEK_TOKEN="web-console-userToken-optional" \
+  -e MIMO_USER_ID="your-xiaomi-userId" \
+  -e MIMO_PASS_TOKEN="your-xiaomi-passToken" \
   -v "$HOME/.claude/.credentials.json:/secrets/claude-creds.json:ro" \
   -v "$HOME/.codex/auth.json:/secrets/codex-auth.json:ro" \
   -v "$HOME/.grok:/secrets/grok" \
@@ -77,6 +81,8 @@ docker run -d --name quota-peek -p 5928:5928 \
 - **SuperGrok** — reads `~/.grok/auth.json` (created by the official `grok` CLI after `grok login`). Mount the **directory** `~/.grok` read-write (not the file as `:ro`). xAI refresh tokens rotate; a read-only file mount lets the dashboard burn the login and then fail. If absent the card shows offline gracefully.
 - **MiniMax** (国内) — plain Subscription Key passed via `-e MINIMAX_API_KEY=...`. No file mount needed.
 - **Kimi** — pass `-e KIMI_API_KEY=...` (an API Key from the Kimi Code Console), or mount `~/.kimi-code/credentials/kimi-code.json` the same way as the other credential files via `KIMI_CREDENTIALS_PATH`. Prefer the API key in Docker: OAuth access tokens last ~15 min and refresh write-back needs a writable file.
+- **DeepSeek** — plain env vars: `-e DEEPSEEK_API_KEY=sk-...` for the balance row, optionally `-e DEEPSEEK_TOKEN=...` (web-console `userToken`) for the Month Spend row.
+- **MiMo** — recommended: `-e MIMO_USER_ID=… -e MIMO_PASS_TOKEN=…` (account.xiaomi.com cookies) for automatic renewal; the renewed session is cached in `MIMO_SESSION_FILE` (compose mounts `./mimo-session` writable). Or pass `-e MIMO_COOKIE='…'` with the console Cookie header (~1 day, manual re-paste).
 
 <details>
 <summary>Or with Docker Compose (recommended)</summary>
@@ -124,6 +130,8 @@ docker compose up -d --build
 | **Kimi** | OAuth credentials from `~/.kimi-code/credentials/kimi-code.json` (auto-refreshed) → `api.kimi.com/coding/v1/usages`, or a Console API Key | Just be logged in via the Kimi Code CLI. Or set `KIMI_API_KEY` to an API Key from the Kimi Code Console. |
 | **Volcengine** (火山方舟) | AK/SK-signed (HMAC-SHA256 V4) `GetCodingPlanUsage` on the Ark control plane (falls back to `GetAFPUsage` for older Agent Plans) | Set `VOLC_ACCESS_KEY` / `VOLC_SECRET_KEY` from 火山引擎控制台 → 密钥管理. Session(5h)/weekly/monthly windows (5h + weekly shown). |
 | **StepFun** (阶跃星辰) | Session-authenticated `QueryStepPlanRateLimit` + `GetStepPlanStatus` on platform.stepfun.com (`oasis-appid/platform/webid` headers) | Paste the `cookie` header of a logged-in platform.stepfun.com into `STEPFUN_COOKIE` (or just the Oasis-Token into `STEPFUN_TOKEN`). The `sk-` API key does **not** work — it only sees your top-up balance. |
+| **DeepSeek** | Official `GET api.deepseek.com/user/balance` with the `sk-` API key; month spend via the platform's internal `usage/by_api_key/cost` with the web-console `userToken` | Set `DEEPSEEK_API_KEY` (balance). Optionally set `DEEPSEEK_TOKEN` to the `userToken` from `localStorage` on platform.deepseek.com to add the **Month Spend** row — it degrades to balance-only when the token expires. |
+| **MiMo** (小米) | Console-cookie-authenticated `GET platform.xiaomimimo.com/api/v1/tokenPlan/usage` + `/api/v1/balance` (the `tp-` API key can spend quota but cannot query it). The ~24h console cookie renews itself via the Xiaomi Account SSO seed (`userId`+`passToken`) when provided | Recommended: set `MIMO_USER_ID` + `MIMO_PASS_TOKEN` (account.xiaomi.com cookies — long-lived, auto-renews the session). Fallback: `MIMO_COOKIE` with a pasted console Cookie header (~1 day). |
 
 A provider that isn't set up returns `ok: false` with `notConfigured: true` and a hint naming the variable to set — its card stays hidden until you turn on the `No key ×N` toggle, and never breaks the others.
 
@@ -141,14 +149,18 @@ See [`.env.example`](.env.example) for the full list. The only one you must set 
 
 **StepFun** needs a *session*, not an API key: `QueryStepPlanRateLimit` answers only to the web console's cookies. Open `platform.stepfun.com/plan-usage` while logged in, copy the `cookie` request header of any Dashboard API call into `STEPFUN_COOKIE`, or just the `Oasis-Token` value into `STEPFUN_TOKEN`. In the latter case the mandatory `Oasis-Webid` header is decoded from the token's own `device_id` claim (mismatch ⇒ `oasis-token is embezzled`); paste the paired `access...refresh` form and expired access tokens get refreshed automatically. The access token only lives ~30 min, so renewed pairs are cached in `STEPFUN_SESSION_FILE` (0600, keyed by a fingerprint of the credential — multi-account safe) because the spent half still sitting in `.env` cannot be reused forever. Credit-denominated plans (`plan_family: 2`) report one **Monthly Credit** row instead of 5h/weekly windows — the two billing shapes are told apart by the response payload, since `plan_family` alone lies.
 
+**DeepSeek** is a money card, not a window card: the **Balance** row comes from the official `user/balance` API (your `sk-` key), and the optional **Month Spend** row sums this calendar month's spend from the platform's internal usage API, which needs the web-console `userToken` (`JSON.parse(localStorage.getItem('userToken')).value` on platform.deepseek.com — not the `sk-` key, which gets a 40003). The spend bar is `spend / (spend + balance)` — the share of your current money pool already burned — and a dead token just demotes the card to balance-only with a note instead of failing it.
+
+**MiMo** (小米) also authenticates with a console session: the Token Plan's `tp-` API key can spend the quota but Xiaomi exposes no API-key route to *query* it. `MIMO_COOKIE` (the full Cookie header; the `api-platform_serviceToken` cookie is the one that matters) unlocks `tokenPlan/usage` → **Token Plan** (套餐积分), **Compensation** (补偿积分) and **Monthly** rows plus the pay-as-you-go **Balance**. Console cookies live ~24h with no refresh endpoint — but the browser renews them silently through your Xiaomi Account session, and the provider re-enacts exactly that when you set `MIMO_USER_ID` + `MIMO_PASS_TOKEN` (the long-lived `account.xiaomi.com` cookies; `passToken` is HttpOnly — copy it from DevTools): on a 401 it calls `genLoginUrl`, exchanges the seed at `account.xiaomi.com/pass/serviceLogin?_json=true` (computing Xiaomi's `clientSign = base64(sha1("nonce=…&ssecurity"))`), visits the signed `/sts` callback to re-issue the four platform cookies, verifies against `/api/v1/userProfile` and retries — rotating seeds are cached in `MIMO_SESSION_FILE` (0600) so a restart doesn't spend them again. Treat `passToken` like a password; if it ever leaks, sign the account out to revoke it.
+
 ### Multiple accounts (key-based providers)
 
-GLM, MiniMax, Kimi, Volcengine and StepFun support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
+GLM, MiniMax, Kimi, Volcengine, StepFun, DeepSeek and MiMo support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2`, `DEEPSEEK_API_KEY_2` + `DEEPSEEK_TOKEN_2`, `MIMO_USER_ID_2` + `MIMO_PASS_TOKEN_2` (or `MIMO_COOKIE_2`) (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
 
 ## 🏗️ How it works
 
 ```
-GET /api/usage/[provider]   ← single dynamic route: claude | codex | glm | supergrok | minimax | kimi
+GET /api/usage/[provider]   ← single dynamic route: claude | codex | glm | supergrok | minimax | kimi | volcengine | stepfun | deepseek | mimo
 GET /                        ← the dashboard (static)
 ```
 

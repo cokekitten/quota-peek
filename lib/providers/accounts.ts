@@ -172,6 +172,11 @@ export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
         );
         merged.estimated = true;
       }
+      // Money-style rows (balance) carry `used` without a `total`: even when a
+      // percent can't be exact-merged, the absolute numbers still sum cleanly.
+      if (group.every((l) => typeof l.used === 'number')) {
+        merged.used = group.reduce((s, l) => s + (l.used ?? 0), 0);
+      }
     }
     const resets = group
       .map((l) => l.resetAt)

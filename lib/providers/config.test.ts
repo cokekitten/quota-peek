@@ -7,6 +7,8 @@ import { isConfigured as glmConfigured } from './glm';
 import { isConfigured as minimaxConfigured } from './minimax';
 import { isConfigured as kimiConfigured } from './kimi';
 import { isConfigured as volcengineConfigured } from './volcengine';
+import { isConfigured as deepseekConfigured } from './deepseek';
+import { isConfigured as mimoConfigured } from './mimo';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -23,6 +25,11 @@ const ENV_VARS = [
   'VOLC_ACCESS_KEY',
   'VOLC_SECRET_KEY',
   'VOLC_PLAN_LABEL',
+  'DEEPSEEK_API_KEY',
+  'DEEPSEEK_TOKEN',
+  'DEEPSEEK_BASE_URL',
+  'MIMO_COOKIE',
+  'MIMO_BASE_URL',
 ];
 
 function setEnv(name: string, value?: string) {
@@ -57,6 +64,8 @@ describe('key-based provider probes', () => {
     expect(minimaxConfigured()).toBe(false);
     expect(kimiConfigured()).toBe(false);
     expect(volcengineConfigured()).toBe(false);
+    expect(deepseekConfigured()).toBe(false);
+    expect(mimoConfigured()).toBe(false);
   });
 
   it('report configured from the unsuffixed key', () => {
@@ -68,6 +77,10 @@ describe('key-based provider probes', () => {
     expect(glmConfigured()).toBe(true);
     expect(minimaxConfigured()).toBe(true);
     expect(volcengineConfigured()).toBe(true);
+    setEnv('DEEPSEEK_API_KEY', 'sk-ds');
+    setEnv('MIMO_COOKIE', 'api-platform_serviceToken=x');
+    expect(deepseekConfigured()).toBe(true);
+    expect(mimoConfigured()).toBe(true);
   });
 
   it('count a suffixed key alone (account 1 absent, gaps allowed)', () => {
@@ -94,6 +107,14 @@ describe('key-based provider probes', () => {
     expect(glmConfigured()).toBe(false);
     expect(minimaxConfigured()).toBe(false);
     expect(volcengineConfigured()).toBe(false);
+    expect(deepseekConfigured()).toBe(false);
+    expect(mimoConfigured()).toBe(false);
+  });
+
+  it('count a DeepSeek token alone as an account (spend without balance)', () => {
+    clearProviderEnv();
+    setEnv('DEEPSEEK_TOKEN_2', 'web-token');
+    expect(deepseekConfigured()).toBe(true);
   });
 
   it('accept a Kimi API key or an existing credentials file', () => {

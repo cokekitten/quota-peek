@@ -6,6 +6,8 @@ import { fetchMinimaxUsage, isConfigured as minimaxConfigured } from './minimax'
 import { fetchKimiUsage, isConfigured as kimiConfigured } from './kimi';
 import { fetchVolcengineUsage, isConfigured as volcengineConfigured } from './volcengine';
 import { fetchStepfunUsage, isConfigured as stepfunConfigured } from './stepfun';
+import { fetchDeepseekUsage, isConfigured as deepseekConfigured } from './deepseek';
+import { fetchMimoUsage, isConfigured as mimoConfigured } from './mimo';
 import { PROVIDER_KEYS } from './types';
 import type { ProviderDef, ProviderKey, ProviderResult } from './types';
 
@@ -67,6 +69,20 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
     isConfigured: stepfunConfigured,
     configHint:
       'set STEPFUN_COOKIE (Cookie header from a logged-in platform.stepfun.com) or STEPFUN_TOKEN (Oasis-Token)',
+  },
+  deepseek: {
+    key: 'deepseek',
+    fn: fetchDeepseekUsage,
+    isConfigured: deepseekConfigured,
+    configHint:
+      'set DEEPSEEK_API_KEY (balance) and optionally DEEPSEEK_TOKEN (web-console userToken, month spend)',
+  },
+  mimo: {
+    key: 'mimo',
+    fn: fetchMimoUsage,
+    isConfigured: mimoConfigured,
+    configHint:
+      'set MIMO_COOKIE (Cookie header from a logged-in platform.xiaomimimo.com console)',
   },
 };
 

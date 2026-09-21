@@ -16,4 +16,7 @@ next-env.d.ts
 # StepFun rotated session cache (contains a live token pair) — never commit
 .stepfun-session.json
 stepfun-session/
+# MiMo renewed session cache (contains live ~24h cookies) — never commit
+.mimo-session.json
+mimo-session/
 .env.bak*

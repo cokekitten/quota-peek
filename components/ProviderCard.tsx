@@ -25,8 +25,10 @@ const getSlots = (provider: ProviderKey) => {
   }
   // StepFun plans come in two shapes (rolling 5h/weekly windows *or* a monthly
   // credit pool) that the response only reveals per account, so this card is
-  // fully data-driven — the provider names every row it returns.
-  if (provider === 'stepfun') {
+  // fully data-driven — the provider names every row it returns. DeepSeek
+  // (money card: Month Spend + Balance) and MiMo (plan/comp/monthly credits +
+  // optional balance) name their rows too.
+  if (provider === 'stepfun' || provider === 'deepseek' || provider === 'mimo') {
     return [] as const;
   }
   return [
@@ -201,6 +203,13 @@ function Metric({
   const p = limit ? Math.max(0, Math.min(100, limit.percent)) : 0;
   const sev = p >= 90 ? 'crit' : p >= 70 ? 'warn' : 'ok';
   const reset = limit?.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
+  // Absolute numbers (money pools, credit counts) — percent-only rows skip this.
+  const abs =
+    limit && limit.used !== undefined
+      ? `${fmtAbs(limit.used, limit.unit)}${
+          limit.total !== undefined ? ` / ${fmtAbs(limit.total, limit.unit)}` : ''
+        }`
+      : null;
   // Merged rows carry a quota-weighted expectedPercent (windows reset at
   // different times); single accounts derive expected from their own reset.
   const pace = limit
@@ -232,11 +241,26 @@ function Metric({
       <div className="bar">
         <span className={sev} style={{ width: `${p}%`, opacity: dim ? 0.4 : 1 }} />
       </div>
-      {reset && (
+      {(abs || limit?.detail || reset) && (
         <div className="meta">
-          <span className="reset" title={limit!.resetAt}>
-            {reset}
-          </span>
+          {abs && (
+            <span
+              className="abs"
+              title={
+                limit?.kind === 'spend'
+                  ? 'spent this month / current money pool (spend + balance)'
+                  : 'used / total'
+              }
+            >
+              {abs}
+            </span>
+          )}
+          {limit?.detail && <span className="detail">{limit.detail}</span>}
+          {reset && (
+            <span className="reset" title={limit!.resetAt}>
+              {reset}
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -301,6 +325,22 @@ function fmtRel(iso: string): string {
   return `${min} min`;
 }
 
+/** Absolute used/total numbers: money with a currency prefix, big counts compact. */
+function fmtAbs(n: number, unit?: string): string {
+  const trim = (v: number) => String(Math.round(v * 10) / 10);
+  if (unit === '¥' || unit === '$') {
+    const abs = Math.abs(n);
+    const s = abs >= 1000 ? n.toFixed(0) : abs >= 1 ? String(Math.round(n * 100) / 100) : n.toFixed(2);
+    return `${unit}${s}`;
+  }
+  const suffix = unit ? ` ${unit}` : '';
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `${trim(n / 1e9)}B${suffix}`;
+  if (abs >= 1e6) return `${trim(n / 1e6)}M${suffix}`;
+  if (abs >= 1e3) return `${trim(n / 1e3)}K${suffix}`;
+  return `${trim(n)}${suffix}`;
+}
+
 const LABELS: Record<ProviderKey, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
@@ -310,4 +350,6 @@ const LABELS: Record<ProviderKey, string> = {
   kimi: 'Kimi',
   volcengine: 'Volcengine',
   stepfun: 'StepFun',
+  deepseek: 'DeepSeek',
+  mimo: 'MiMo',
 };

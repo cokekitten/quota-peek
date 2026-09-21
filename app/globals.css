@@ -490,6 +490,16 @@ main {
   color: var(--accent);
   opacity: 0.85;
 }
+.meta .abs {
+  font-variant-numeric: tabular-nums;
+}
+.meta .detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
 :root[data-theme='c'] .meta .reset {
   color: var(--muted);
 }
