@@ -61,6 +61,15 @@ describe('fetchDeepseekUsage', () => {
 
     const r = await fetchDeepseekUsage();
     expect(r.ok).toBe(true);
+    // day-aligned window: both bounds share the same local-midnight offset
+    const usageCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find((c) =>
+      String(c[0]).includes('by_api_key/cost'),
+    );
+    const q = new URL(String(usageCall![0])).searchParams;
+    expect(Number(q.get('end'))! - Number(q.get('start'))!).toBeGreaterThan(0);
+    expect(
+      (Number(q.get('end'))! - Number(q.get('start'))!) % 86400,
+    ).toBe(0);
     const spend = r.summary?.limits.find((l) => l.kind === 'spend');
     const balance = r.summary?.limits.find((l) => l.kind === 'balance');
     // pool = 30.5 + 69.5 = 100 → 30.5%

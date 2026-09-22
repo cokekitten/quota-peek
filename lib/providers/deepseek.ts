@@ -210,9 +210,12 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
 async function fetchMonthSpend(token: string): Promise<number> {
   const now = new Date();
   const tzSec = -now.getTimezoneOffset() * 60;
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const start = Math.floor(monthStart.getTime() / 1000);
-  const end = Math.floor(now.getTime() / 1000) + 60; // inclusive-ish, server buckets by day
+  // Both bounds must be aligned to local midnights — the platform answers
+  // INVALID_PARAM for anything else (and the buckets are daily: 86400).
+  const midnight = (dt: Date) =>
+    Math.floor(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime() / 1000);
+  const start = midnight(new Date(now.getFullYear(), now.getMonth(), 1));
+  const end = midnight(now) + 86400; // include all of today's buckets
   const url = `${PLATFORM_USAGE_URL}?start=${start}&end=${end}&tz=${tzSec}`;
   const resp = await fetch(url, {
     headers: { ...PLATFORM_HEADERS, Authorization: `Bearer ${token}` },
