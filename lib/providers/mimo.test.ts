@@ -84,6 +84,8 @@ describe('fetchMimoUsage', () => {
 
     const r = await fetchMimoUsage();
     expect(r.ok).toBe(true);
+    // detail's planName feeds the card header tag (otherwise it says "live")
+    expect(r.summary?.planLabel).toBe('Max');
     const kinds = r.summary?.limits.map((l) => l.kind);
     expect(kinds).toEqual(['comp', 'monthly', 'balance']);
 
@@ -193,6 +195,7 @@ describe('fetchMimoUsage', () => {
     expect(r.ok).toBe(true);
     const monthly = r.summary?.limits.find((l) => l.kind === 'monthly');
     expect(monthly?.resetAt).toBeUndefined();
+    expect(r.summary?.planLabel).toBeUndefined();
   });
 
   it('ignores a malformed currentPeriodEnd', async () => {

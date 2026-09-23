@@ -356,21 +356,26 @@ async function fetchMimoAccount(account: MimoAccount): Promise<ProviderResult> {
   if (limits.length === 0) {
     return fail('Usage response carried no plan/month items (no active Token Plan?)');
   }
-  // The monthly window is the plan's billing cycle and refills when the
-  // period rolls over — take the reset from tokenPlan/detail (what the
-  // console shows as "有效期至 … (UTC)") instead of guessing one.
+  // tokenPlan/detail carries what the usage payload lacks: the plan name
+  // (the card header tag) and when the billing window rolls over — the
+  // console's "有效期至 … (UTC)" line. Decorative: failures just leave both
+  // unset rather than guessing.
+  let planName: string | undefined;
   const monthly = limits.find((l) => l.kind === 'monthly');
-  if (monthly && num(monthItem?.limit as number | string) > 0) {
-    try {
-      const det = await call(DETAIL_PATH);
-      if (det.status === 200) {
-        const parsed = JSON.parse(det.body) as DetailResponse;
+  try {
+    const det = await call(DETAIL_PATH);
+    if (det.status === 200) {
+      const parsed = JSON.parse(det.body) as DetailResponse;
+      planName = parsed.data?.planName?.trim() || undefined;
+      // The monthly window is the plan's billing cycle and refills when the
+      // period rolls over — never a calendar month.
+      if (monthly && num(monthItem?.limit as number | string) > 0) {
         const iso = periodEndIso(parsed.data?.currentPeriodEnd);
         if (iso) monthly.resetAt = iso;
       }
-    } catch {
-      /* decorative — the row just renders without a countdown */
     }
+  } catch {
+    /* decorative — the rows already stand on their own */
   }
 
   // ---- balance (nice-to-have) ---------------------------------------------
@@ -394,7 +399,7 @@ async function fetchMimoAccount(account: MimoAccount): Promise<ProviderResult> {
     /* balance is decorative — usage rows already stand */
   }
 
-  return { ok: true, provider, label, summary: { limits } };
+  return { ok: true, provider, label, summary: { planLabel: planName, limits } };
 }
 
 /** 302 (redirect to login), 401/403, or a JSON envelope with code 401. */
