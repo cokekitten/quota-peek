@@ -50,7 +50,7 @@ function mockDs(routes: Array<{ match: (url: string, auth: string) => boolean; s
 }
 
 describe('fetchDeepseekUsage', () => {
-  it('shows one 消费金额/充值余额 row: 30d spend over top-up balance', async () => {
+  it('shows one 消费金额/充值余额 row: month spend over top-up balance', async () => {
     process.env.DEEPSEEK_API_KEY = KEY;
     process.env.DEEPSEEK_TOKEN = TOKEN;
     mockDs([
@@ -70,7 +70,11 @@ describe('fetchDeepseekUsage', () => {
       total: 59.5,
       unit: '¥',
     });
-    expect(r.summary?.limits[0].resetAt).toBeUndefined();
+    // the month window rolls over at the local month boundary (GMT+8 console)
+    const reset = new Date(r.summary?.limits[0].resetAt!);
+    expect(reset.getDate()).toBe(1);
+    expect(reset.getHours()).toBe(0);
+    expect(reset.getMonth()).toBe((new Date().getMonth() + 1) % 12);
   });
 
   it('computes the percent as the spend share of the money pool', async () => {

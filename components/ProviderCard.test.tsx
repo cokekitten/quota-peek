@@ -47,6 +47,19 @@ describe('Metric', () => {
     expect(html).not.toContain('width:128%');
   });
 
+  it('renders the pace delta on money rows (过多/过少)', () => {
+    const resetAt = new Date(Date.now() + 10 * 864e5).toISOString();
+    const html = renderToStaticMarkup(
+      <Metric
+        label="Spend / Top-up"
+        limit={{ label: 'Spend / Top-up', kind: 'spend', percent: 50, used: 1, total: 1, unit: '¥', resetAt }}
+      />,
+    );
+    // 10 of 30 days left → 66.7% expected by even pace; 50% actual → 17 under
+    expect(html).toContain('class="pace under"');
+    expect(html).toContain('-17%');
+  });
+
   it('still surfaces detail notes on money rows', () => {
     const html = renderToStaticMarkup(
       <Metric

@@ -302,8 +302,8 @@ function paceDelta(
       ? 5 * 3600e3
       : kind === 'weekly' || kind.startsWith('weekly_')
         ? 7 * 24 * 3600e3
-        : kind === 'monthly'
-          ? 30 * 24 * 3600e3 // billing-cycle anchored; start unknown → 30d estimate
+        : kind === 'monthly' || kind === 'spend'
+          ? 30 * 24 * 3600e3 // month-anchored; start unknown → 30d estimate
           : null;
   if (!duration) return null;
   const remainMs = new Date(resetAt).getTime() - Date.now();

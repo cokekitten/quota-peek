@@ -223,6 +223,19 @@ export function poolSharePercent(spend: number, balance: number): number {
   return pool > 0 ? Math.max(0, Math.round((spend / pool) * 1000) / 10) : 0;
 }
 
+/** Local next month's 1st, 00:00 — when the calendar-month money window
+ * (当月消费) rolls over. */
+export function nextMonthStart(): string {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+}
+
+/** The same in UTC — MiMo's month buckets are UTC (its console says so). */
+export function nextUtcMonthStart(): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+}
+
 /** Window durations implied by kind, mirroring the card's pace math. */
 const KIND_DURATION_MS: Record<string, number> = {
   '5h': 5 * 3600e3,
@@ -230,6 +243,8 @@ const KIND_DURATION_MS: Record<string, number> = {
   // Monthly windows are billing-cycle anchored (not calendar months) and the
   // APIs don't expose the window start — 30d is the closest uniform estimate.
   monthly: 30 * 24 * 3600e3,
+  // Money rows are month-scoped (当月消费) — same 30d estimate as 'monthly'.
+  spend: 30 * 24 * 3600e3,
 };
 
 /** Best available utilization fraction for a row, 0–1. */

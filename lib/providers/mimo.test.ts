@@ -127,6 +127,11 @@ describe('fetchMimoUsage', () => {
       total: 12.34,
       unit: '¥',
     });
+    // MiMo's month buckets are UTC (the 账单及用量 page says so) → reset at the UTC month boundary
+    const spendReset = new Date(r.summary?.limits[2].resetAt!);
+    expect(spendReset.getUTCDate()).toBe(1);
+    expect(spendReset.getUTCHours()).toBe(0);
+    expect(spendReset.getUTCMonth()).toBe((new Date().getUTCMonth() + 1) % 12);
     expect(r.summary?.limits[2]?.detail).toBeUndefined();
   });
 

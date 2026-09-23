@@ -1,5 +1,11 @@
 import type { ProviderResult, UsageLimit } from './types';
-import { accountEnvName, fetchMultiAccount, poolSharePercent, readIndexedAccounts } from './accounts';
+import {
+  accountEnvName,
+  fetchMultiAccount,
+  nextMonthStart,
+  poolSharePercent,
+  readIndexedAccounts,
+} from './accounts';
 
 /**
  * DeepSeek usage — a pay-as-you-go money card, not windowed quotas.
@@ -180,8 +186,9 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
       total: haveTopup ? topup : undefined,
       unit,
       detail,
-      // Money doesn't reset; no resetAt, and 'spend' has no window duration in
-      // the card's pace table, so no pace delta either.
+      // Money itself never resets, but the month window does — the rollover
+      // anchors both the "Resets in …" line and the over/under pace delta.
+      resetAt: nextMonthStart(),
     });
   } else if (haveTopup) {
     limits.push({

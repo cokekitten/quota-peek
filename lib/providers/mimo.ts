@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ProviderResult, UsageLimit } from './types';
-import { accountEnvName, fetchMultiAccount, poolSharePercent, readIndexedAccounts } from './accounts';
+import { accountEnvName, fetchMultiAccount, nextUtcMonthStart, poolSharePercent, readIndexedAccounts } from './accounts';
 
 /**
  * Xiaomi MiMo (小米 MiMo 开放平台, platform.xiaomimimo.com) usage.
@@ -425,11 +425,21 @@ async function fetchMimoAccount(account: MimoAccount): Promise<ProviderResult> {
       used: spend,
       total: balance,
       unit,
+      // The month window (UTC buckets) rolls over at the month boundary —
+      // anchors the countdown and the over/under pace delta.
+      resetAt: nextUtcMonthStart(),
     });
   } else if (haveBalance) {
     limits.push({ label: 'Balance', kind: 'balance', percent: 0, used: balance, unit });
   } else if (haveSpend) {
-    limits.push({ label: 'Spend / Balance', kind: 'spend', percent: 0, used: spend, unit });
+    limits.push({
+      label: 'Spend / Balance',
+      kind: 'spend',
+      percent: 0,
+      used: spend,
+      unit,
+      resetAt: nextUtcMonthStart(),
+    });
   }
 
   return { ok: true, provider, label, summary: { planLabel: planName, limits } };
