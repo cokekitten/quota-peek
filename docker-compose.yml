@@ -11,8 +11,8 @@ services:
     # just works. `environment` below overrides env_file on conflicts.
     env_file: .env
     environment:
-      # The app computes "local" month/day boundaries (monthly windows, the
-      # DeepSeek spend window) — pin the container to the operator's timezone.
+      # The app computes "local" month/day boundaries (the DeepSeek month-spend
+      # window) — pin the container to the operator's timezone.
       TZ: Asia/Shanghai
       # Hard fail-fast: GLM is the only required key.
       GLM_API_KEY: ${GLM_API_KEY:?GLM_API_KEY is required — set it in .env or your shell}

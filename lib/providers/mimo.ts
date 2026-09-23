@@ -26,9 +26,13 @@ import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accoun
  *                          (0600, keyed by a seed fingerprint — multi-account
  *                          safe), the same pattern as the StepFun provider.
  *
- * Endpoints (both GET, console headers):
+ * Endpoints (all GET, console headers):
  *   /api/v1/tokenPlan/usage → plan_total_token / compensation_total_token
- *                            (套餐积分/补偿积分) + monthUsage (calendar month)
+ *                            (套餐积分/补偿积分) + monthUsage (套餐月总量 —
+ *                            the plan's billing window, not a calendar month)
+ *   /api/v1/tokenPlan/detail → currentPeriodEnd, when that window rolls over
+ *                            ("有效期至 … (UTC)" on plan-manage); optional,
+ *                            failures just leave rows without a countdown
  *   /api/v1/balance        → pay-as-you-go money (nice-to-have; failures are
  *                            swallowed — the usage rows stand on their own).
  *
@@ -39,6 +43,7 @@ import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accoun
 const DEFAULT_BASE_URL = 'https://platform.xiaomimimo.com';
 const ACCOUNT_ORIGIN = 'https://account.xiaomi.com';
 const USAGE_PATH = '/api/v1/tokenPlan/usage';
+const DETAIL_PATH = '/api/v1/tokenPlan/detail';
 const BALANCE_PATH = '/api/v1/balance';
 const VERIFY_PATH = '/api/v1/userProfile';
 const TIMEOUT_MS = Number(process.env.MIMO_TIMEOUT_MS || 15000);
@@ -65,6 +70,16 @@ interface UsageResponse {
   data?: {
     usage?: { percent?: number | string; items?: UsageItem[] };
     monthUsage?: { percent?: number | string; items?: UsageItem[] };
+  };
+}
+
+interface DetailResponse {
+  code?: number;
+  message?: string;
+  data?: {
+    planName?: string;
+    currentPeriodEnd?: string;
+    expired?: boolean;
   };
 }
 
@@ -132,10 +147,20 @@ const num = (v: number | string | undefined): number => {
 
 const clampPercent = (v: number): number => Math.max(0, Math.min(100, v));
 
-/** Local next month's 1st, 00:00 — when the calendar-month window rolls over. */
-function nextMonthStart(): string {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+/**
+ * Normalize `currentPeriodEnd` ("2026-10-21 23:59:59") to an ISO timestamp.
+ * The value is UTC — the console renders it as "有效期至 … (UTC)" and parses
+ * it with dayjs.utc — so a bare timestamp gets an explicit zone instead of
+ * being read as local time. Garbage and already-elapsed deadlines yield
+ * undefined: no countdown beats a wrong one.
+ */
+function periodEndIso(value: string | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const t = value.trim();
+  if (!t) return undefined;
+  const iso = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(t) ? t : `${t.replace(' ', 'T')}Z`;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) && ms > Date.now() ? new Date(ms).toISOString() : undefined;
 }
 
 /** Percent from used/limit when possible, else the API's own fraction. */
@@ -328,9 +353,22 @@ async function fetchMimoAccount(account: MimoAccount): Promise<ProviderResult> {
   if (limits.length === 0) {
     return fail('Usage response carried no plan/month items (no active Token Plan?)');
   }
-  // Calendar-month consumption rolls over at the local month boundary.
+  // The monthly window is the plan's billing cycle and refills when the
+  // period rolls over — take the reset from tokenPlan/detail (what the
+  // console shows as "有效期至 … (UTC)") instead of guessing one.
   const monthly = limits.find((l) => l.kind === 'monthly');
-  if (monthly && num(monthItem?.limit as number | string) > 0) monthly.resetAt = nextMonthStart();
+  if (monthly && num(monthItem?.limit as number | string) > 0) {
+    try {
+      const det = await call(DETAIL_PATH);
+      if (det.status === 200) {
+        const parsed = JSON.parse(det.body) as DetailResponse;
+        const iso = periodEndIso(parsed.data?.currentPeriodEnd);
+        if (iso) monthly.resetAt = iso;
+      }
+    } catch {
+      /* decorative — the row just renders without a countdown */
+    }
+  }
 
   // ---- balance (nice-to-have) ---------------------------------------------
   try {

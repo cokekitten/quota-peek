@@ -36,6 +36,24 @@ const BALANCE = {
   data: { balance: '12.34', cashBalance: '10.00', giftBalance: '2.34', currency: 'CNY' },
 };
 
+// Mirrors a real tokenPlan/detail response (plan-manage page: "有效期至 … (UTC)").
+const DETAIL = {
+  code: 0,
+  message: '',
+  data: {
+    planCode: 'max',
+    planName: 'Max',
+    currentPeriodEnd: '2026-10-21 23:59:59',
+    expired: false,
+    enableAutoRenew: true,
+    autoRenewDiscount: null,
+    hasAutoRenewSubscribed: true,
+    clawEnabled: false,
+    clawPeriodEnd: null,
+    clawPurchased: false,
+  },
+};
+
 function mockMimo(
   routes: Array<{ path: string; status?: number; body: unknown; cookie?: string }>,
 ) {
@@ -60,6 +78,7 @@ describe('fetchMimoUsage', () => {
     process.env.MIMO_COOKIE = COOKIE;
     mockMimo([
       { path: '/api/v1/tokenPlan/usage', body: USAGE, cookie: COOKIE },
+      { path: '/api/v1/tokenPlan/detail', body: DETAIL, cookie: COOKIE },
       { path: '/api/v1/balance', body: BALANCE, cookie: COOKIE },
     ]);
 
@@ -73,7 +92,8 @@ describe('fetchMimoUsage', () => {
     expect(r.summary?.limits[1]).toMatchObject({ kind: 'comp', percent: 10 });
     const monthly = r.summary?.limits[2];
     expect(monthly).toMatchObject({ kind: 'monthly', percent: 25 });
-    expect(monthly?.resetAt).toBe(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString());
+    // currentPeriodEnd is UTC (the console labels it "(UTC)") — 23:59:59Z, not local.
+    expect(monthly?.resetAt).toBe('2026-10-21T23:59:59.000Z');
     expect(r.summary?.limits[3]).toMatchObject({ kind: 'balance', used: 12.34, unit: '¥' });
     expect(r.summary?.limits[3]?.detail).toContain('cash ¥10');
     expect(r.summary?.limits[3]?.detail).toContain('gift ¥2.34');
@@ -144,6 +164,48 @@ describe('fetchMimoUsage', () => {
     expect(plan).toMatchObject({ percent: 40 });
     expect(plan?.used).toBeUndefined();
     expect(plan?.total).toBeUndefined();
+  });
+
+  it('leaves Monthly without a countdown when tokenPlan/detail is unavailable', async () => {
+    process.env.MIMO_COOKIE = COOKIE;
+    mockMimo([{ path: '/api/v1/tokenPlan/usage', body: USAGE, cookie: COOKIE }]);
+
+    const r = await fetchMimoUsage();
+    expect(r.ok).toBe(true);
+    const monthly = r.summary?.limits.find((l) => l.kind === 'monthly');
+    expect(monthly?.resetAt).toBeUndefined();
+  });
+
+  it('ignores a malformed currentPeriodEnd', async () => {
+    process.env.MIMO_COOKIE = COOKIE;
+    mockMimo([
+      { path: '/api/v1/tokenPlan/usage', body: USAGE, cookie: COOKIE },
+      {
+        path: '/api/v1/tokenPlan/detail',
+        body: { code: 0, data: { ...DETAIL.data, currentPeriodEnd: 'soon™' } },
+        cookie: COOKIE,
+      },
+    ]);
+
+    const r = await fetchMimoUsage();
+    const monthly = r.summary?.limits.find((l) => l.kind === 'monthly');
+    expect(monthly?.resetAt).toBeUndefined();
+  });
+
+  it('drops a currentPeriodEnd already in the past', async () => {
+    process.env.MIMO_COOKIE = COOKIE;
+    mockMimo([
+      { path: '/api/v1/tokenPlan/usage', body: USAGE, cookie: COOKIE },
+      {
+        path: '/api/v1/tokenPlan/detail',
+        body: { code: 0, data: { ...DETAIL.data, currentPeriodEnd: '2020-01-01 00:00:00', expired: true } },
+        cookie: COOKIE,
+      },
+    ]);
+
+    const r = await fetchMimoUsage();
+    const monthly = r.summary?.limits.find((l) => l.kind === 'monthly');
+    expect(monthly?.resetAt).toBeUndefined();
   });
 
   it('fails with a re-paste hint on 401', async () => {
