@@ -36,6 +36,7 @@ const DEFAULT_BASE_URL = 'https://openrouter.ai';
 const KEY_PATH = '/api/v1/key';
 const CREDITS_PATH = '/api/v1/credits';
 const ANALYTICS_PATH = '/api/v1/analytics/query';
+const KEYS_PATH = '/api/v1/keys';
 const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS || 15000);
 const MGMT_VAR = 'OPENROUTER_MANAGEMENT_KEY';
 
@@ -102,103 +103,86 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
       },
     }));
 
-  const [keysResult, wallet, monthSpend] = await Promise.all([
+  const mgmtKey = process.env[MGMT_VAR];
+  const [keysResult, wallet, monthSpend, caps] = await Promise.all([
     keys.length
       ? fetchMultiAccount(keys, fetchOpenrouterAccount, { provider, label })
       : Promise.resolve(undefined),
-    fetchWallet(process.env[MGMT_VAR], baseUrl),
-    fetchMonthSpend(process.env[MGMT_VAR], baseUrl),
+    fetchWallet(mgmtKey, baseUrl),
+    fetchMonthSpend(mgmtKey, baseUrl),
+    fetchKeyCaps(mgmtKey, baseUrl),
   ]);
 
-  // No regular keys: the management key's own view — the month over the
-  // wallet when analytics answers, the cumulative pool otherwise.
+  // No regular keys: the management key alone carries the whole card.
   if (!keysResult) {
+    const limits: UsageLimit[] = [];
     if (monthSpend !== undefined && wallet) {
+      limits.push({
+        label: 'Spend / Balance',
+        kind: 'spend',
+        percent: poolSharePercent(monthSpend, wallet.balance),
+        used: monthSpend,
+        total: wallet.balance,
+        unit: '$',
+        resetAt: nextUtcMonthStart(),
+      });
+    } else if (monthSpend !== undefined) {
+      limits.push({
+        label: 'Month Spend',
+        kind: 'balance',
+        percent: 0,
+        used: monthSpend,
+        unit: '$',
+        resetAt: nextUtcMonthStart(),
+      });
+    } else if (wallet) {
+      limits.push({
+        label: 'Usage / Balance',
+        kind: 'spend',
+        percent: poolSharePercent(wallet.spent, wallet.balance),
+        used: wallet.spent,
+        total: wallet.balance,
+        unit: '$',
+      });
+    }
+    if (caps) limits.push(caps);
+    if (limits.length === 0) {
       return {
-        ok: true,
+        ok: false,
         provider,
         label,
-        summary: {
-          limits: [
-            {
-              label: 'Spend / Balance',
-              kind: 'spend',
-              percent: poolSharePercent(monthSpend, wallet.balance),
-              used: monthSpend,
-              total: wallet.balance,
-              unit: '$',
-              resetAt: nextUtcMonthStart(),
-            },
-          ],
-        },
+        error: `neither OPENROUTER_API_KEY nor ${MGMT_VAR} answered — nothing to show`,
       };
     }
-    if (monthSpend !== undefined) {
-      return {
-        ok: true,
-        provider,
-        label,
-        summary: {
-          limits: [
-            {
-              label: 'Month Spend',
-              kind: 'balance',
-              percent: 0,
-              used: monthSpend,
-              unit: '$',
-              resetAt: nextUtcMonthStart(),
-            },
-          ],
-        },
-      };
-    }
-    if (wallet) {
-      return {
-        ok: true,
-        provider,
-        label,
-        summary: {
-          limits: [
-            {
-              label: 'Usage / Balance',
-              kind: 'spend',
-              percent: poolSharePercent(wallet.spent, wallet.balance),
-              used: wallet.spent,
-              total: wallet.balance,
-              unit: '$',
-            },
-          ],
-        },
-      };
-    }
-    return {
-      ok: false,
-      provider,
-      label,
-      error: `neither OPENROUTER_API_KEY nor ${MGMT_VAR} answered — nothing to show`,
-    };
+    return { ok: true, provider, label, summary: { limits } };
   }
-  if (!keysResult.ok || (!wallet && monthSpend === undefined)) return keysResult;
+  if (!keysResult.ok) return keysResult;
 
-  // Fold the account-level numbers into the combined money row: the whole
+  // Fold the account-level numbers into the combined view: the whole
   // account's month spend (analytics covers every key, even unconfigured
   // ones — falling back to the configured keys' own usage_monthly) over the
-  // wallet balance. Per-account views keep their own numbers (the wallet is
-  // shared, so summing it per account would double-count).
-  const limits = (keysResult.summary?.limits ?? []).map((l) => {
-    if (l.label !== 'Month Spend' || l.kind !== 'balance') return l;
-    const used = monthSpend ?? l.used ?? 0;
-    if (!wallet) return { ...l, used };
-    return {
-      label: 'Spend / Balance',
-      kind: 'spend',
-      percent: poolSharePercent(used, wallet.balance),
-      used,
-      total: wallet.balance,
-      unit: '$',
-      resetAt: l.resetAt,
-    };
-  });
+  // wallet balance, plus the account-wide cap bar. Per-account views keep
+  // their own numbers (wallet and caps are shared — summing them per account
+  // would double-count).
+  const base = keysResult.summary?.limits ?? [];
+  const folded =
+    wallet || monthSpend !== undefined
+      ? base.map((l) => {
+          if (l.label !== 'Month Spend' || l.kind !== 'balance') return l;
+          const used = monthSpend ?? l.used ?? 0;
+          if (!wallet) return { ...l, used };
+          return {
+            label: 'Spend / Balance',
+            kind: 'spend',
+            percent: poolSharePercent(used, wallet.balance),
+            used,
+            total: wallet.balance,
+            unit: '$',
+            resetAt: l.resetAt,
+          };
+        })
+      : base;
+  const limits = caps ? [...folded.filter((l) => l.label !== 'Key Limit'), caps] : folded;
   return { ...keysResult, summary: { ...keysResult.summary!, limits } };
 }
 
@@ -239,6 +223,59 @@ async function fetchMonthSpend(
     let sum = 0;
     for (const row of rows) sum += num(row.total_usage) || 0;
     return round2(sum);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Every key's spending cap on the account — Σ of the capped ones — from the
+ * Management key's key list, covering keys that are not configured here.
+ * undefined when the management key is missing or the list declines; a
+ * shared `limit_reset` cadence keeps its rollover, mixed cadences fall back
+ * to a lifetime 'cap' bar.
+ */
+async function fetchKeyCaps(
+  mgmtKey: string | undefined,
+  baseUrl: string,
+): Promise<UsageLimit | undefined> {
+  if (!mgmtKey) return undefined;
+  try {
+    const resp = await fetch(`${baseUrl}${KEYS_PATH}`, {
+      headers: { Authorization: `Bearer ${mgmtKey}`, Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!resp.ok) return undefined;
+    const parsed = (await resp.json()) as { data?: KeyData[] } | KeyData[];
+    const rows = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed.data)
+        ? parsed.data
+        : undefined;
+    if (!rows) return undefined;
+    let used = 0;
+    let total = 0;
+    const cadences = new Set<string>();
+    for (const k of rows) {
+      const cap = num(k.limit);
+      if (!Number.isFinite(cap) || cap <= 0) continue;
+      const remaining = num(k.limit_remaining);
+      used += Math.max(0, cap - (Number.isFinite(remaining) ? remaining : cap));
+      total += cap;
+      cadences.add((k.limit_reset ?? '').trim().toLowerCase());
+    }
+    if (total <= 0) return undefined; // no key carries a cap → no row
+    const { kind, resetAt } = capWindow(cadences.size === 1 ? [...cadences][0] : '');
+    return {
+      label: 'Key Limit',
+      kind,
+      percent: Math.max(0, Math.round((used / total) * 1000) / 10),
+      used: round2(used),
+      total: round2(total),
+      unit: '$',
+      ...(resetAt ? { resetAt } : {}),
+    };
   } catch {
     return undefined;
   }

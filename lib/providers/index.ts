@@ -90,7 +90,7 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
     fn: fetchOpenrouterUsage,
     isConfigured: openrouterConfigured,
     configHint:
-      'set OPENROUTER_API_KEY (openrouter.ai/settings/keys); add OPENROUTER_MANAGEMENT_KEY (/settings/management-keys) for the wallet balance',
+      'set OPENROUTER_MANAGEMENT_KEY (/settings/management-keys — wallet + month + key caps); OPENROUTER_API_KEY only as a per-key fallback',
   },
 };
 

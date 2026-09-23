@@ -266,6 +266,91 @@ describe('fetchOpenrouterUsage', () => {
     expect(new Date(r.summary?.limits[0].resetAt!).getUTCDate()).toBe(1);
   });
 
+  it('aggregates key caps from the keys list (management key)', async () => {
+    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
+    mockOr([
+      {
+        path: '/api/v1/analytics/query',
+        body: { data: { data: [{ date__day: '2026-09-23', total_usage: 5 }] } },
+      },
+      { path: '/api/v1/credits', body: { data: { total_credits: 100, total_usage: 83.7 } } },
+      {
+        path: '/api/v1/keys',
+        body: {
+          data: [
+            { name: 'usage', limit: null, limit_remaining: null, limit_reset: null },
+            { name: 'leo', limit: 100, limit_remaining: 55.10687033, limit_reset: null },
+          ],
+        },
+      },
+    ]);
+
+    const r = await fetchOpenrouterUsage();
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend', 'cap']);
+    // 100 − 55.10687033 = $44.89 burned of the $100 cap → 44.9%
+    expect(r.summary?.limits[1]).toMatchObject({
+      label: 'Key Limit',
+      kind: 'cap',
+      used: 44.89,
+      total: 100,
+      percent: 44.9,
+    });
+    expect(r.summary?.limits[1].resetAt).toBeUndefined();
+  });
+
+  it('prefers the account-wide caps over the configured key\'s own cap', async () => {
+    process.env.OPENROUTER_API_KEY = KEY;
+    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
+    mockOr([
+      { path: '/api/v1/credits', body: { data: { total_credits: 100, total_usage: 83.7 } } },
+      {
+        path: '/api/v1/keys',
+        body: {
+          data: [{ name: 'leo', limit: 100, limit_remaining: 55.10687033, limit_reset: null }],
+        },
+      },
+      { path: '/api/v1/key', body: { data: KEY_DATA }, auth: `Bearer ${KEY}` },
+    ]);
+
+    const r = await fetchOpenrouterUsage();
+    // the configured key's own 20/50 cap is superseded by the account's 44.89/100
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend', 'cap']);
+    expect(r.summary?.limits[1]).toMatchObject({ used: 44.89, total: 100 });
+  });
+
+  it('maps a shared cap cadence onto the rollover, mixed cadences fall back to cap', async () => {
+    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-23T13:24:00Z'));
+    const cases: Array<[
+      resets: Array<string | null>,
+      kind: string,
+      resetAt: string | undefined,
+    ]> = [
+      [['monthly', 'monthly'], 'monthly', '2026-10-01T00:00:00.000Z'],
+      [['monthly', 'daily'], 'cap', undefined],
+    ];
+    for (const [resets, kind, resetAt] of cases) {
+      mockOr([
+        {
+          path: '/api/v1/keys',
+          body: {
+            data: resets.map((limit_reset, i) => ({
+              name: `k${i}`,
+              limit: 50,
+              limit_remaining: 40,
+              limit_reset,
+            })),
+          },
+        },
+      ]);
+      const r = await fetchOpenrouterUsage();
+      const cap = r.summary?.limits[0];
+      expect(cap?.kind, `resets=${resets.join(',')}`).toBe(kind);
+      expect(cap?.resetAt, `resets=${resets.join(',')}`).toBe(resetAt);
+    }
+  });
+
   it('merges two keys (Σspend, Σcap)', async () => {
     process.env.OPENROUTER_API_KEY = KEY;
     process.env.OPENROUTER_API_KEY_2 = 'sk-or-v1-two';
