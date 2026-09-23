@@ -35,6 +35,7 @@ import {
 const DEFAULT_BASE_URL = 'https://openrouter.ai';
 const KEY_PATH = '/api/v1/key';
 const CREDITS_PATH = '/api/v1/credits';
+const ANALYTICS_PATH = '/api/v1/analytics/query';
 const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS || 15000);
 const MGMT_VAR = 'OPENROUTER_MANAGEMENT_KEY';
 
@@ -101,60 +102,146 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
       },
     }));
 
-  const [keysResult, wallet] = await Promise.all([
+  const [keysResult, wallet, monthSpend] = await Promise.all([
     keys.length
       ? fetchMultiAccount(keys, fetchOpenrouterAccount, { provider, label })
       : Promise.resolve(undefined),
     fetchWallet(process.env[MGMT_VAR], baseUrl),
+    fetchMonthSpend(process.env[MGMT_VAR], baseUrl),
   ]);
 
-  // Management key alone: the cumulative wallet view.
+  // No regular keys: the management key's own view — the month over the
+  // wallet when analytics answers, the cumulative pool otherwise.
   if (!keysResult) {
-    if (!wallet) {
+    if (monthSpend !== undefined && wallet) {
       return {
-        ok: false,
+        ok: true,
         provider,
         label,
-        error: `neither OPENROUTER_API_KEY nor ${MGMT_VAR} set — nothing to show`,
+        summary: {
+          limits: [
+            {
+              label: 'Spend / Balance',
+              kind: 'spend',
+              percent: poolSharePercent(monthSpend, wallet.balance),
+              used: monthSpend,
+              total: wallet.balance,
+              unit: '$',
+              resetAt: nextUtcMonthStart(),
+            },
+          ],
+        },
+      };
+    }
+    if (monthSpend !== undefined) {
+      return {
+        ok: true,
+        provider,
+        label,
+        summary: {
+          limits: [
+            {
+              label: 'Month Spend',
+              kind: 'balance',
+              percent: 0,
+              used: monthSpend,
+              unit: '$',
+              resetAt: nextUtcMonthStart(),
+            },
+          ],
+        },
+      };
+    }
+    if (wallet) {
+      return {
+        ok: true,
+        provider,
+        label,
+        summary: {
+          limits: [
+            {
+              label: 'Usage / Balance',
+              kind: 'spend',
+              percent: poolSharePercent(wallet.spent, wallet.balance),
+              used: wallet.spent,
+              total: wallet.balance,
+              unit: '$',
+            },
+          ],
+        },
       };
     }
     return {
-      ok: true,
+      ok: false,
       provider,
       label,
-      summary: {
-        limits: [
-          {
-            label: 'Usage / Balance',
-            kind: 'spend',
-            percent: poolSharePercent(wallet.spent, wallet.balance),
-            used: wallet.spent,
-            total: wallet.balance,
-            unit: '$',
-          },
-        ],
-      },
+      error: `neither OPENROUTER_API_KEY nor ${MGMT_VAR} answered — nothing to show`,
     };
   }
-  if (!keysResult.ok || !wallet) return keysResult;
+  if (!keysResult.ok || (!wallet && monthSpend === undefined)) return keysResult;
 
-  // Fold the account wallet into the combined money row: Σ month spend over
-  // the balance. Per-account views keep their own numbers (the wallet is
+  // Fold the account-level numbers into the combined money row: the whole
+  // account's month spend (analytics covers every key, even unconfigured
+  // ones — falling back to the configured keys' own usage_monthly) over the
+  // wallet balance. Per-account views keep their own numbers (the wallet is
   // shared, so summing it per account would double-count).
-  const limits = (keysResult.summary?.limits ?? []).map((l) =>
-    l.label === 'Month Spend' && l.kind === 'balance'
-      ? {
-          label: 'Spend / Balance',
-          kind: 'spend',
-          percent: poolSharePercent(l.used ?? 0, wallet.balance),
-          used: l.used,
-          total: wallet.balance,
-          unit: '$',
-          resetAt: l.resetAt,
-        }
-      : l,
-  );
+  const limits = (keysResult.summary?.limits ?? []).map((l) => {
+    if (l.label !== 'Month Spend' || l.kind !== 'balance') return l;
+    const used = monthSpend ?? l.used ?? 0;
+    if (!wallet) return { ...l, used };
+    return {
+      label: 'Spend / Balance',
+      kind: 'spend',
+      percent: poolSharePercent(used, wallet.balance),
+      used,
+      total: wallet.balance,
+      unit: '$',
+      resetAt: l.resetAt,
+    };
+  });
   return { ...keysResult, summary: { ...keysResult.summary!, limits } };
+}
+
+/**
+ * The account's month spend (当月, UTC) straight from analytics — every key
+ * on the account, not just the configured ones. undefined when the
+ * management key is missing or analytics declines; 0 is a real empty month.
+ */
+async function fetchMonthSpend(
+  mgmtKey: string | undefined,
+  baseUrl: string,
+): Promise<number | undefined> {
+  if (!mgmtKey) return undefined;
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  try {
+    const resp = await fetch(`${baseUrl}${ANALYTICS_PATH}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${mgmtKey}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        metrics: ['total_usage'],
+        granularity: 'day',
+        time_range: { start, end: now.toISOString() },
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!resp.ok) return undefined;
+    const parsed = (await resp.json()) as {
+      data?: { data?: Array<{ total_usage?: number | string }> };
+    };
+    const rows = parsed.data?.data;
+    if (!Array.isArray(rows)) return undefined;
+    let sum = 0;
+    for (const row of rows) sum += num(row.total_usage) || 0;
+    return round2(sum);
+  } catch {
+    return undefined;
+  }
 }
 
 /** The account wallet via the Management key: spent + remaining, in USD. */

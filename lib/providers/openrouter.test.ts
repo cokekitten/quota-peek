@@ -171,6 +171,101 @@ describe('fetchOpenrouterUsage', () => {
     expect(r.summary?.limits.map((l) => l.kind)).toEqual(['balance']);
   });
 
+  it('prefers the account-wide month spend from analytics', async () => {
+    process.env.OPENROUTER_API_KEY = KEY;
+    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
+    let queryBody: Record<string, unknown> | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/v1/analytics/query')) {
+          queryBody = JSON.parse(String(init?.body));
+          return new Response(
+            JSON.stringify({
+              data: {
+                data: [
+                  { date__day: '2026-09-22', total_usage: 67.83 },
+                  { date__day: '2026-09-23', total_usage: 0.09886 },
+                ],
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes('/api/v1/credits')) {
+          return new Response(
+            JSON.stringify({ data: { total_credits: 100, total_usage: 83.7 } }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ data: KEY_DATA }), { status: 200 });
+      }),
+    );
+
+    const r = await fetchOpenrouterUsage();
+    // the whole account's month (67.93), not the fresh key's own 12.4
+    expect(r.summary?.limits[0]).toMatchObject({
+      label: 'Spend / Balance',
+      kind: 'spend',
+      used: 67.93,
+      total: 16.3,
+      percent: 80.6,
+    });
+    expect(queryBody?.metrics).toEqual(['total_usage']);
+    const range = queryBody?.time_range as { start: string };
+    expect(new Date(range.start).getUTCDate()).toBe(1); // the UTC month start
+  });
+
+  it('falls back to the key sum when analytics is unavailable', async () => {
+    process.env.OPENROUTER_API_KEY = KEY;
+    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
+    mockOr([
+      { path: '/api/v1/analytics/query', status: 500, body: 'boom' },
+      {
+        path: '/api/v1/credits',
+        body: { data: { total_credits: 100, total_usage: 83.7 } },
+        auth: 'Bearer sk-or-mgmt',
+      },
+      { path: '/api/v1/key', body: { data: KEY_DATA }, auth: `Bearer ${KEY}` },
+    ]);
+
+    const r = await fetchOpenrouterUsage();
+    expect(r.summary?.limits[0]).toMatchObject({
+      label: 'Spend / Balance',
+      used: 12.4,
+      total: 16.3,
+      percent: 43.2,
+    });
+  });
+
+  it('shows the month Spend / Balance with the management key alone when analytics answers', async () => {
+    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
+    mockOr([
+      {
+        path: '/api/v1/analytics/query',
+        body: { data: { data: [{ date__day: '2026-09-23', total_usage: 5 }] } },
+        auth: 'Bearer sk-or-mgmt',
+      },
+      {
+        path: '/api/v1/credits',
+        body: { data: { total_credits: 100, total_usage: 83.7 } },
+        auth: 'Bearer sk-or-mgmt',
+      },
+    ]);
+
+    const r = await fetchOpenrouterUsage();
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend']);
+    // 5 / (5 + 16.3) = 23.5%
+    expect(r.summary?.limits[0]).toMatchObject({
+      label: 'Spend / Balance',
+      used: 5,
+      total: 16.3,
+      percent: 23.5,
+    });
+    expect(new Date(r.summary?.limits[0].resetAt!).getUTCDate()).toBe(1);
+  });
+
   it('merges two keys (Σspend, Σcap)', async () => {
     process.env.OPENROUTER_API_KEY = KEY;
     process.env.OPENROUTER_API_KEY_2 = 'sk-or-v1-two';
