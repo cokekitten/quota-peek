@@ -54,4 +54,60 @@ describe('fetchKimiUsage', () => {
     expect(rows[1].resetAt).toBe('2026-09-30T00:00:00.000Z');
     expect(r.summary?.planLabel).toBe('Allegro');
   });
+
+  it('merges same-level accounts without the ≈ estimate flag', async () => {
+    process.env.KIMI_API_KEY = 'sk-kimi-a';
+    process.env.KIMI_API_KEY_2 = 'sk-kimi-b';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const auth = new Headers(init?.headers).get('Authorization') || '';
+        // two Allegro accounts: 5h at 7% / 21%, weekly at 84% / 42%
+        const [five, week] = auth === 'Bearer sk-kimi-a' ? [7, 84] : [21, 42];
+        return new Response(
+          JSON.stringify({
+            user: { membership: { level: 'LEVEL_ADVANCED' } },
+            usage: { limit: '100', used: String(week), remaining: String(100 - week) },
+            limits: [
+              {
+                window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' },
+                detail: { limit: '100', used: String(five), remaining: String(100 - five) },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const r = await fetchKimiUsage();
+    const rows = r.summary!.limits;
+    // equal-capacity windows: the mean IS the combined utilization (14 / 63)
+    expect(rows[0]).toMatchObject({ kind: '5h', percent: 14 });
+    expect(rows[1]).toMatchObject({ kind: 'weekly', percent: 63 });
+    expect(rows[0].estimated).toBeUndefined();
+    expect(rows[1].estimated).toBeUndefined();
+  });
+
+  it('flags the ≈ estimate when the accounts sit on different plans', async () => {
+    process.env.KIMI_API_KEY = 'sk-kimi-a';
+    process.env.KIMI_API_KEY_2 = 'sk-kimi-b';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const auth = new Headers(init?.headers).get('Authorization') || '';
+        const level = auth === 'Bearer sk-kimi-a' ? 'LEVEL_ADVANCED' : 'LEVEL_PREMIUM';
+        return new Response(
+          JSON.stringify({
+            user: { membership: { level } },
+            usage: { limit: '100', used: '50', remaining: '50' },
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const r = await fetchKimiUsage();
+    expect(r.summary!.limits[0].estimated).toBe(true);
+  });
 });

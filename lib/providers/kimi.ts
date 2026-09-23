@@ -158,6 +158,9 @@ async function fetchKimiAccount(account: KimiAccount): Promise<ProviderResult> {
       label,
       summary: {
         planLabel: level ? levelLabel(level) : undefined,
+        // Membership level is the capacity class: same level → same window
+        // quotas, so the multi-account mean merges exact (no ≈ flag).
+        planKey: level,
         limits,
       },
       raw: data as unknown,
