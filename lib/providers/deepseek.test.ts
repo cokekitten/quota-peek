@@ -5,6 +5,7 @@ const KEY = 'sk-test-ds';
 const TOKEN = 'web-user-token';
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const v of ['DEEPSEEK_API_KEY', 'DEEPSEEK_TOKEN', 'DEEPSEEK_BASE_URL']) {
     for (const n of [undefined, 2, 3]) delete process.env[n === undefined ? v : `${v}_${n}`];
   }
@@ -60,7 +61,7 @@ describe('fetchDeepseekUsage', () => {
     const r = await fetchDeepseekUsage();
     expect(r.ok).toBe(true);
     expect(r.summary?.limits).toHaveLength(1);
-    // 30.5 / (30.5 + 59.5) = 33.9% — the spend share of the 30-day pool
+    // 30.5 / (30.5 + 59.5) = 33.9% — the spend share of the money pool
     expect(r.summary?.limits[0]).toMatchObject({
       kind: 'spend',
       label: 'Spend / Top-up',
@@ -72,7 +73,7 @@ describe('fetchDeepseekUsage', () => {
     expect(r.summary?.limits[0].resetAt).toBeUndefined();
   });
 
-  it('computes the percent as the spend share of the 30-day pool', async () => {
+  it('computes the percent as the spend share of the money pool', async () => {
     const cases: Array<[spend: number, topup: number, percent: number]> = [
       [0, 100, 0], // nothing spent yet
       [100, 0, 100], // balance gone — the pool is fully burned
@@ -97,9 +98,11 @@ describe('fetchDeepseekUsage', () => {
     }
   });
 
-  it('requests a rolling 30-day window in daily buckets', async () => {
+  it('requests the calendar month in daily buckets (当月消费)', async () => {
     process.env.DEEPSEEK_API_KEY = KEY;
     process.env.DEEPSEEK_TOKEN = TOKEN;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-23T13:24:00Z'));
     mockDs([
       { match: (u) => u.endsWith('/user/balance'), body: BALANCE },
       { match: (u) => u.includes('by_api_key/cost'), body: COST(1) },
@@ -112,10 +115,12 @@ describe('fetchDeepseekUsage', () => {
     const q = new URL(String(usageCall![0])).searchParams;
     const start = Number(q.get('start')!);
     const end = Number(q.get('end')!);
-    // 近30天 = today plus the 29 days before it: 30 daily buckets, exactly.
-    expect(end - start).toBe(30 * 86400);
+    // 当月: the 1st's local midnight through the end of today (23 days in Sep)
+    expect(new Date(start * 1000).getDate()).toBe(1);
+    expect(end - start).toBe(new Date().getDate() * 86400);
     // both bounds must sit on the same local midnight (the API rejects otherwise)
     expect(start % 86400).toBe(end % 86400);
+    vi.useRealTimers();
   });
 
   it('falls back to the total balance when the payload does not split top-up', async () => {

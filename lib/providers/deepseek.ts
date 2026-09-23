@@ -1,5 +1,5 @@
 import type { ProviderResult, UsageLimit } from './types';
-import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accounts';
+import { accountEnvName, fetchMultiAccount, poolSharePercent, readIndexedAccounts } from './accounts';
 
 /**
  * DeepSeek usage — a pay-as-you-go money card, not windowed quotas.
@@ -16,10 +16,11 @@ import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accoun
  *       sk- key is rejected here (40003), and the userToken is the `value`
  *       inside localStorage.userToken on platform.deepseek.com.
  *
- * With both, the card shows one 消费金额/充值余额 row: the last 30 days'
- * spend (近30天, the platform's own rolling window) over the top-up balance
+ * With both, the card shows one 消费金额/充值余额 row: the current month's
+ * spend (当月, the console's month filter) over the top-up balance
  * (充值余额 — what the console headlines; granted/赠金 is not re-stated).
- * The row's percent is just that fraction: spend / top-up. With only the API
+ * The row's percent is the spend share of the money pool,
+ * spend / (spend + top-up) — bounded 100% by construction. With only the API
  * key it degrades to a bare Balance row (充值余额). A failing/absent token
  * never fails the card; the money row carries a note.
  */
@@ -108,13 +109,9 @@ const num = (v: string | number | undefined): number => {
   return Number.isFinite(n) ? n : NaN;
 };
 
-/** Spend share of the 30-day money pool (spend + remaining top-up) — bounded
- * 0–100 by construction: 0% when nothing is spent, 100% once the balance is
- * gone. 1 decimal. */
-const percentPool = (spend: number, topup: number): number => {
-  const pool = spend + topup;
-  return pool > 0 ? Math.max(0, Math.round((spend / pool) * 1000) / 10) : 0;
-};
+/** Spend share of the money pool (spend + top-up) — shared with the other
+ * money cards, bounded 100% by construction. */
+const percentPool = (spend: number, topup: number): number => poolSharePercent(spend, topup);
 
 async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderResult> {
   const provider = 'deepseek' as const;
@@ -153,12 +150,12 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
     }
   }
 
-  // ---- 30-day spend (internal platform API, web userToken) ----------------
+  // ---- month spend (internal platform API, web userToken) -----------------
   let spend = NaN;
   let spendError: string | undefined;
   if (account.token) {
     try {
-      spend = await fetchSpend30d(account.token);
+      spend = await fetchMonthSpend(account.token);
     } catch (err) {
       spendError = err instanceof Error ? err.message : String(err);
     }
@@ -203,16 +200,16 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
   return { ok: true, provider, label, summary: { limits } };
 }
 
-/** Rolling 30-day spend (近30天) in the account's billing currency (CNY). */
-async function fetchSpend30d(token: string): Promise<number> {
+/** Current-month spend (当月) in the account's billing currency (CNY). */
+async function fetchMonthSpend(token: string): Promise<number> {
   const now = new Date();
   const tzSec = -now.getTimezoneOffset() * 60;
   // Both bounds must be aligned to local midnights — the platform answers
   // INVALID_PARAM for anything else (and the buckets are daily: 86400).
   const midnight = (dt: Date) =>
     Math.floor(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime() / 1000);
-  // 近30天 = today plus the 29 days before it (30 daily buckets).
-  const start = midnight(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29));
+  // 当月: the 1st's local midnight through the end of today.
+  const start = midnight(new Date(now.getFullYear(), now.getMonth(), 1));
   const end = midnight(now) + 86400; // include all of today's buckets
   const url = `${PLATFORM_USAGE_URL}?start=${start}&end=${end}&tz=${tzSec}`;
   const resp = await fetch(url, {

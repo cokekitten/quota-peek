@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ProviderResult, UsageLimit } from './types';
-import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accounts';
+import { accountEnvName, fetchMultiAccount, poolSharePercent, readIndexedAccounts } from './accounts';
 
 /**
  * Xiaomi MiMo (小米 MiMo 开放平台, platform.xiaomimimo.com) usage.
@@ -36,8 +36,12 @@ import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accoun
  *   /api/v1/tokenPlan/detail → currentPeriodEnd, when that window rolls over
  *                            ("有效期至 … (UTC)" on plan-manage); optional,
  *                            failures just leave rows without a countdown
- *   /api/v1/balance        → pay-as-you-go money (nice-to-have; failures are
- *                            swallowed — the usage rows stand on their own).
+ *   /api/v1/usage         → costUsage.currentMonthCost (当月消费金额,
+ *                            the console's 账单及用量 page) — feeds the
+ *                            消费/余额 money row together with the balance
+ *   /api/v1/balance        → pay-as-you-go money (余额). Both money endpoints
+ *                            are nice-to-have: failures are swallowed and
+ *                            the row degrades or disappears.
  *
  * Credits are the plan's unit (community-measured ≈100 credits = ¥1; the raw
  * numbers are shown as-is).
@@ -47,6 +51,7 @@ const DEFAULT_BASE_URL = 'https://platform.xiaomimimo.com';
 const ACCOUNT_ORIGIN = 'https://account.xiaomi.com';
 const USAGE_PATH = '/api/v1/tokenPlan/usage';
 const DETAIL_PATH = '/api/v1/tokenPlan/detail';
+const USAGE_SUMMARY_PATH = '/api/v1/usage';
 const BALANCE_PATH = '/api/v1/balance';
 const VERIFY_PATH = '/api/v1/userProfile';
 const TIMEOUT_MS = Number(process.env.MIMO_TIMEOUT_MS || 15000);
@@ -83,6 +88,14 @@ interface DetailResponse {
     planName?: string;
     currentPeriodEnd?: string;
     expired?: boolean;
+  };
+}
+
+interface UsageSummaryResponse {
+  code?: number;
+  message?: string;
+  data?: {
+    costUsage?: { totalCost?: number | string; currentMonthCost?: number | string };
   };
 }
 
@@ -378,25 +391,45 @@ async function fetchMimoAccount(account: MimoAccount): Promise<ProviderResult> {
     /* decorative — the rows already stand on their own */
   }
 
-  // ---- balance (nice-to-have) ---------------------------------------------
+  // ---- money: 余额 + 当月消费 (a DeepSeek-style 消费/余额 row) -------------
+  let balance = NaN;
+  let currency = '';
   try {
     const bal = await call(BALANCE_PATH);
     if (bal.status === 200) {
       const parsed = JSON.parse(bal.body) as BalanceResponse;
-      const total = num(parsed.data?.balance);
-      if (Number.isFinite(total) && total > 0) {
-        const unit = parsed.data?.currency === 'USD' ? '$' : '¥';
-        limits.push({
-          label: 'Balance',
-          kind: 'balance',
-          percent: 0,
-          used: total,
-          unit,
-        });
-      }
+      balance = num(parsed.data?.balance);
+      currency = parsed.data?.currency ?? '';
     }
   } catch {
-    /* balance is decorative — usage rows already stand */
+    /* money is decorative — the credit rows already stand */
+  }
+  let spend = NaN;
+  try {
+    const use = await call(USAGE_SUMMARY_PATH);
+    if (use.status === 200) {
+      const parsed = JSON.parse(use.body) as UsageSummaryResponse;
+      spend = num(parsed.data?.costUsage?.currentMonthCost);
+    }
+  } catch {
+    /* same */
+  }
+  const unit = currency === 'USD' ? '$' : '¥';
+  const haveSpend = Number.isFinite(spend) && spend >= 0;
+  const haveBalance = Number.isFinite(balance) && balance > 0;
+  if (haveSpend && haveBalance) {
+    limits.push({
+      label: 'Spend / Balance',
+      kind: 'spend',
+      percent: poolSharePercent(spend, balance),
+      used: spend,
+      total: balance,
+      unit,
+    });
+  } else if (haveBalance) {
+    limits.push({ label: 'Balance', kind: 'balance', percent: 0, used: balance, unit });
+  } else if (haveSpend) {
+    limits.push({ label: 'Spend / Balance', kind: 'spend', percent: 0, used: spend, unit });
   }
 
   return { ok: true, provider, label, summary: { planLabel: planName, limits } };

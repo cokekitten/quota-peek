@@ -36,6 +36,29 @@ const BALANCE = {
   data: { balance: '12.34', cashBalance: '10.00', giftBalance: '2.34', currency: 'CNY' },
 };
 
+// Mirrors GET /api/v1/usage (账单及用量 page): costUsage.currentMonthCost is
+// the console's 当月「总体消费金额」.
+const USAGE_SUMMARY = {
+  code: 0,
+  message: '',
+  data: {
+    tokenUsage: {
+      inputToken: 107496921,
+      outputToken: 1238412,
+      cacheToken: 98391101,
+      totalToken: 108735333,
+      inputAudioDuration: 0,
+      batchInputToken: 0,
+      batchOutputToken: 0,
+      batchCacheToken: 0,
+      batchInputAudioDuration: 0,
+    },
+    accountRateLimit: { tpm: 3000000, rpm: 1000, queryTpm: 10000000, concurrency: 100 },
+    costUsage: { totalCost: '196.21', currentMonthCost: '66.17' },
+    pluginUsage: { totalRequestCount: '0', webSearchRequestCount: '0' },
+  },
+};
+
 // Mirrors a real tokenPlan/detail response (plan-manage page: "有效期至 … (UTC)").
 const DETAIL = {
   code: 0,
@@ -74,11 +97,12 @@ function mockMimo(
 }
 
 describe('fetchMimoUsage', () => {
-  it('renders compensation, monthly and balance rows (Token Plan is the same counter as Monthly)', async () => {
+  it('renders compensation, monthly and a 当月消费/余额 money row', async () => {
     process.env.MIMO_COOKIE = COOKIE;
     mockMimo([
       { path: '/api/v1/tokenPlan/usage', body: USAGE, cookie: COOKIE },
       { path: '/api/v1/tokenPlan/detail', body: DETAIL, cookie: COOKIE },
+      { path: '/api/v1/usage', body: USAGE_SUMMARY, cookie: COOKIE },
       { path: '/api/v1/balance', body: BALANCE, cookie: COOKIE },
     ]);
 
@@ -87,15 +111,36 @@ describe('fetchMimoUsage', () => {
     // detail's planName feeds the card header tag (otherwise it says "live")
     expect(r.summary?.planLabel).toBe('Max');
     const kinds = r.summary?.limits.map((l) => l.kind);
-    expect(kinds).toEqual(['comp', 'monthly', 'balance']);
+    expect(kinds).toEqual(['comp', 'monthly', 'spend']);
 
     expect(r.summary?.limits[0]).toMatchObject({ kind: 'comp', percent: 10 });
     const monthly = r.summary?.limits[1];
     expect(monthly).toMatchObject({ kind: 'monthly', percent: 25, used: 500_000_000, total: 2_000_000_000, unit: 'cr' });
     // currentPeriodEnd is UTC (the console labels it "(UTC)") — 23:59:59Z, not local.
     expect(monthly?.resetAt).toBe('2026-10-21T23:59:59.000Z');
-    expect(r.summary?.limits[2]).toMatchObject({ kind: 'balance', used: 12.34, unit: '¥' });
+    // 当月消费/余额 (DeepSeek-style): pool share 66.17/(66.17+12.34) = 84.3%
+    expect(r.summary?.limits[2]).toMatchObject({
+      kind: 'spend',
+      label: 'Spend / Balance',
+      percent: 84.3,
+      used: 66.17,
+      total: 12.34,
+      unit: '¥',
+    });
+    expect(r.summary?.limits[2]?.detail).toBeUndefined();
+  });
+
+  it('falls back to a bare Balance money row when the spend summary is unavailable', async () => {
+    process.env.MIMO_COOKIE = COOKIE;
+    mockMimo([
+      { path: '/api/v1/tokenPlan/usage', body: USAGE, cookie: COOKIE },
+      { path: '/api/v1/balance', body: BALANCE, cookie: COOKIE },
+    ]);
+
+    const r = await fetchMimoUsage();
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['comp', 'monthly', 'balance']);
     // money rows state the amount once — no cash/gift re-run of the total
+    expect(r.summary?.limits[2]).toMatchObject({ kind: 'balance', used: 12.34, unit: '¥' });
     expect(r.summary?.limits[2]?.detail).toBeUndefined();
   });
 

@@ -153,10 +153,10 @@ export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
       const used = group.reduce((s, l) => s + (l.used ?? 0), 0);
       const total = group.reduce((s, l) => s + (l.total ?? 0), 0);
       // Quota rows are the plain used/total fraction. Money rows ('spend') are
-      // a pool share — spend/(spend + top-up) — bounded 100% by construction.
+      // a pool share — spend/(spend + balance) — bounded 100% by construction.
       const fractionOf =
         merged.kind === 'spend'
-          ? (u: number, t: number) => (u + t > 0 ? u / (u + t) : 0)
+          ? (u: number, t: number) => poolSharePercent(u, t) / 100
           : (u: number, t: number) => (t > 0 ? u / t : 0);
       merged.percent = Math.max(0, Math.round(fractionOf(used, total) * 100));
       merged.used = used;
@@ -210,6 +210,17 @@ export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
     out.push(merged);
   }
   return out;
+}
+
+/**
+ * Spend share of the money pool (spend + remaining balance) in percent,
+ * 1 decimal. Bounded by construction: 0% when nothing is spent, 100% once
+ * the balance is gone. The money rows' bar/percent math (DeepSeek 消费金额/
+ * 充值余额, MiMo 当月消费/余额) all reduce to this.
+ */
+export function poolSharePercent(spend: number, balance: number): number {
+  const pool = spend + balance;
+  return pool > 0 ? Math.max(0, Math.round((spend / pool) * 1000) / 10) : 0;
 }
 
 /** Window durations implied by kind, mirroring the card's pace math. */
