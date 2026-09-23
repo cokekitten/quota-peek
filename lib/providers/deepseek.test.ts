@@ -60,11 +60,11 @@ describe('fetchDeepseekUsage', () => {
     const r = await fetchDeepseekUsage();
     expect(r.ok).toBe(true);
     expect(r.summary?.limits).toHaveLength(1);
-    // 30.5 / 59.5 (top-up, not the 69.5 total) = 51.3%
+    // 30.5 / (30.5 + 59.5) = 33.9% — the spend share of the 30-day pool
     expect(r.summary?.limits[0]).toMatchObject({
       kind: 'spend',
       label: 'Spend / Top-up',
-      percent: 51.3,
+      percent: 33.9,
       used: 30.5,
       total: 59.5,
       unit: '¥',
@@ -72,19 +72,29 @@ describe('fetchDeepseekUsage', () => {
     expect(r.summary?.limits[0].resetAt).toBeUndefined();
   });
 
-  it('reports the true spend/top-up ratio even past 100%', async () => {
-    process.env.DEEPSEEK_API_KEY = KEY;
-    process.env.DEEPSEEK_TOKEN = TOKEN;
-    mockDs([
-      {
-        match: (u) => u.endsWith('/user/balance'),
-        body: { is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '100', topped_up_balance: '100' }] },
-      },
-      { match: (u) => u.includes('by_api_key/cost'), body: COST(128) },
-    ]);
+  it('computes the percent as the spend share of the 30-day pool', async () => {
+    const cases: Array<[spend: number, topup: number, percent: number]> = [
+      [0, 100, 0], // nothing spent yet
+      [100, 0, 100], // balance gone — the pool is fully burned
+      [128, 100, 56.1], // spend/balance would say 128% — the pool share stays bounded
+    ];
+    for (const [spend, topup, percent] of cases) {
+      process.env.DEEPSEEK_API_KEY = KEY;
+      process.env.DEEPSEEK_TOKEN = TOKEN;
+      mockDs([
+        {
+          match: (u) => u.endsWith('/user/balance'),
+          body: {
+            is_available: true,
+            balance_infos: [{ currency: 'CNY', total_balance: String(topup), topped_up_balance: String(topup) }],
+          },
+        },
+        { match: (u) => u.includes('by_api_key/cost'), body: COST(spend) },
+      ]);
 
-    const r = await fetchDeepseekUsage();
-    expect(r.summary?.limits[0]).toMatchObject({ percent: 128, used: 128, total: 100 });
+      const r = await fetchDeepseekUsage();
+      expect(r.summary?.limits[0].percent, `spend=${spend} topup=${topup}`).toBe(percent);
+    }
   });
 
   it('requests a rolling 30-day window in daily buckets', async () => {
@@ -203,8 +213,8 @@ describe('fetchDeepseekUsage', () => {
     expect(r.ok).toBe(true);
     expect(r.summary?.accounts).toHaveLength(2);
     const spend = r.summary?.limits.find((l) => l.kind === 'spend');
-    // Σspend = 128, Σtop-up = 100 → 128% (the merge must not cap the truth)
-    expect(spend).toMatchObject({ used: 128, total: 100, percent: 128 });
+    // Σspend = 128, Σtop-up = 100 → 128/228 = 56% pool share (bounded)
+    expect(spend).toMatchObject({ used: 128, total: 100, percent: 56 });
   });
 
   it('handles numeric-string balances and zero spend', async () => {

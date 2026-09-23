@@ -267,7 +267,7 @@ export function Metric({
               className="abs"
               title={
                 limit?.kind === 'spend'
-                  ? 'spent over the last 30 days (近30天) / top-up balance (充值余额)'
+                  ? '近30天消费金额 / 充值余额 · bar = spend share of the 30-day pool (spend + top-up)'
                   : 'used / total'
               }
             >

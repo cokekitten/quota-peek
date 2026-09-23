@@ -152,9 +152,13 @@ export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
     if (exact) {
       const used = group.reduce((s, l) => s + (l.used ?? 0), 0);
       const total = group.reduce((s, l) => s + (l.total ?? 0), 0);
-      // No cap: money ratios may exceed 100 (spend / top-up). Quota rows
-      // never reach it anyway, since used ≤ total by construction.
-      merged.percent = Math.max(0, Math.round((used / total) * 100));
+      // Quota rows are the plain used/total fraction. Money rows ('spend') are
+      // a pool share — spend/(spend + top-up) — bounded 100% by construction.
+      const fractionOf =
+        merged.kind === 'spend'
+          ? (u: number, t: number) => (u + t > 0 ? u / (u + t) : 0)
+          : (u: number, t: number) => (t > 0 ? u / t : 0);
+      merged.percent = Math.max(0, Math.round(fractionOf(used, total) * 100));
       merged.used = used;
       merged.total = total;
     } else {

@@ -108,12 +108,12 @@ const num = (v: string | number | undefined): number => {
   return Number.isFinite(n) ? n : NaN;
 };
 
-/** Percent of the top-up balance burned by the window's spend (1 decimal).
- * Money ratios may exceed 100 (spend outpacing the remaining top-up) — the
- * number stays true; the card caps the bar width. */
-const percentRatio = (spend: number, topup: number): number => {
-  if (!(topup > 0)) return spend > 0 ? 100 : 0;
-  return Math.max(0, Math.round((spend / topup) * 1000) / 10);
+/** Spend share of the 30-day money pool (spend + remaining top-up) — bounded
+ * 0–100 by construction: 0% when nothing is spent, 100% once the balance is
+ * gone. 1 decimal. */
+const percentPool = (spend: number, topup: number): number => {
+  const pool = spend + topup;
+  return pool > 0 ? Math.max(0, Math.round((spend / pool) * 1000) / 10) : 0;
 };
 
 async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderResult> {
@@ -178,7 +178,7 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
     limits.push({
       label: 'Spend / Top-up',
       kind: 'spend',
-      percent: haveTopup ? percentRatio(spend, topup) : 0,
+      percent: haveTopup ? percentPool(spend, topup) : 0,
       used: spend,
       total: haveTopup ? topup : undefined,
       unit,
