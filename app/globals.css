@@ -401,11 +401,6 @@ main {
   background: var(--tag-bg);
   color: var(--tag-color);
 }
-.metric .est {
-  color: var(--muted);
-  margin-right: 1px;
-}
-
 /* Metrics */
 .metric {
   margin-bottom: 12px;

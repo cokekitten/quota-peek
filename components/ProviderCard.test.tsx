@@ -60,8 +60,18 @@ describe('Metric', () => {
     expect(html).toContain('-17%');
   });
 
+  it('renders merged estimate rows without the ≈ marker', () => {
+    const html = renderToStaticMarkup(
+      <Metric label="Weekly" limit={{ label: 'Weekly', kind: 'weekly', percent: 65, estimated: true }} />,
+    );
+    expect(html).not.toContain('≈');
+    expect(html).toContain('65%');
+  });
+
   it('renders the reset countdown on money rows', () => {
-    const resetAt = new Date(Date.now() + 7 * 864e5).toISOString();
+    // 7 d 1 hr out — the extra hour keeps fmtRel's day bucket stable across
+    // the millisecond between computing the deadline and rendering it
+    const resetAt = new Date(Date.now() + 7 * 864e5 + 36e5).toISOString();
     const html = renderToStaticMarkup(
       <Metric
         label="Month Spend"

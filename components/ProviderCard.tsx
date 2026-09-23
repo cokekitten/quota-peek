@@ -256,11 +256,6 @@ export function Metric({
       <div className="k">
         <span>{label}</span>
         <span className="v">
-          {limit?.estimated && (
-            <span className="est" title="Estimated — accounts report percentages only, merged as a mean">
-              ≈
-            </span>
-          )}
           {p}%
           {pace && (
             <span className={`pace ${pace.cls}`} title={pace.title}>
