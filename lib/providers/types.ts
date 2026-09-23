@@ -121,14 +121,14 @@ export interface ProviderDef {
 
 export const PROVIDER_KEYS: ProviderKey[] = [
   'claude',
-  'codex',
-  'glm',
-  'supergrok',
-  'minimax',
   'kimi',
-  'volcengine',
-  'stepfun',
+  'codex',
   'deepseek',
   'mimo',
+  'glm',
+  'stepfun',
+  'supergrok',
+  'minimax',
   'openrouter',
+  'volcengine',
 ];
