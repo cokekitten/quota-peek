@@ -109,8 +109,10 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
     fetchMonthSpend(mgmtKey, baseUrl),
   ]);
 
-  // No regular keys: the management key alone carries the whole card.
-  if (!keysResult) {
+  // No usable per-key rows (no key configured, or it was revoked upriver):
+  // the management key alone carries the whole card — a dead regular key
+  // must not take the account-level numbers down with it.
+  if (!keysResult || !keysResult.ok) {
     const limits: UsageLimit[] = [];
     if (monthSpend !== undefined && wallet) {
       limits.push({
@@ -142,16 +144,17 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
       });
     }
     if (limits.length === 0) {
-      return {
-        ok: false,
-        provider,
-        label,
-        error: `neither OPENROUTER_API_KEY nor ${MGMT_VAR} answered — nothing to show`,
-      };
+      return keysResult && !keysResult.ok
+        ? keysResult
+        : {
+            ok: false,
+            provider,
+            label,
+            error: `neither OPENROUTER_API_KEY nor ${MGMT_VAR} answered — nothing to show`,
+          };
     }
     return { ok: true, provider, label, summary: { limits } };
   }
-  if (!keysResult.ok) return keysResult;
 
   // Fold the account-level numbers into the combined view: the whole
   // account's month spend (analytics covers every key, even unconfigured

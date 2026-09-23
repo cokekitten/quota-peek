@@ -243,6 +243,28 @@ describe('fetchOpenrouterUsage', () => {
     expect(spend).toMatchObject({ used: 20 });
   });
 
+  it('survives a dead regular key when the management key answers', async () => {
+    process.env.OPENROUTER_API_KEY = KEY; // revoked upriver — .env still has it
+    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
+    mockOr([
+      { path: '/api/v1/key', status: 401, body: { error: { message: 'nope' } } },
+      {
+        path: '/api/v1/analytics/query',
+        body: { data: { data: [{ date__day: '2026-09-23', total_usage: 5 }] } },
+      },
+      { path: '/api/v1/credits', body: { data: { total_credits: 100, total_usage: 83.7 } } },
+    ]);
+
+    const r = await fetchOpenrouterUsage();
+    expect(r.ok).toBe(true);
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend']);
+    expect(r.summary?.limits[0]).toMatchObject({
+      label: 'Spend / Balance',
+      used: 5,
+      total: 16.3,
+    });
+  });
+
   it('fails with a re-check hint on 401', async () => {
     process.env.OPENROUTER_API_KEY = KEY;
     mockOr([{ path: '/api/v1/key', status: 401, body: { error: { message: 'nope' } } }]);
