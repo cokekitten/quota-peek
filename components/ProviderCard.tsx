@@ -26,8 +26,8 @@ const getSlots = (provider: ProviderKey) => {
   // StepFun plans come in two shapes (rolling 5h/weekly windows *or* a monthly
   // credit pool) that the response only reveals per account, so this card is
   // fully data-driven — the provider names every row it returns. DeepSeek
-  // (money card: Month Spend + Balance) and MiMo (plan/comp/monthly credits +
-  // optional balance) name their rows too.
+  // (money card: one 消费金额/充值余额 row, or a bare Balance) and MiMo
+  // (comp/monthly credits + optional balance) name their rows too.
   if (provider === 'stepfun' || provider === 'deepseek' || provider === 'mimo') {
     return [] as const;
   }
@@ -191,7 +191,7 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
   );
 }
 
-function Metric({
+export function Metric({
   label,
   limit,
   dim,
@@ -200,7 +200,26 @@ function Metric({
   limit?: UsageLimit;
   dim?: boolean;
 }) {
-  const p = limit ? Math.max(0, Math.min(100, limit.percent)) : 0;
+  // Money rows (Balance) are an amount, not a window: state the figure once,
+  // with no bar, percent or pace — a progress bar over a money pool means
+  // nothing.
+  if (limit?.kind === 'balance') {
+    return (
+      <div className="metric">
+        <div className="k">
+          <span>{label}</span>
+          <span className="v">{limit.used !== undefined ? fmtAbs(limit.used, limit.unit) : '—'}</span>
+        </div>
+        {limit.detail && (
+          <div className="meta">
+            <span className="detail">{limit.detail}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+  const p = limit ? Math.max(0, limit.percent) : 0;
+  const barPct = Math.min(100, p); // bar width caps at the quota; the number stays true
   const sev = p >= 90 ? 'crit' : p >= 70 ? 'warn' : 'ok';
   const reset = limit?.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
   // Absolute numbers (money pools, credit counts) — percent-only rows skip this.
@@ -239,7 +258,7 @@ function Metric({
         </span>
       </div>
       <div className="bar">
-        <span className={sev} style={{ width: `${p}%`, opacity: dim ? 0.4 : 1 }} />
+        <span className={sev} style={{ width: `${barPct}%`, opacity: dim ? 0.4 : 1 }} />
       </div>
       {(abs || limit?.detail || reset) && (
         <div className="meta">
@@ -248,7 +267,7 @@ function Metric({
               className="abs"
               title={
                 limit?.kind === 'spend'
-                  ? 'spent this month / current money pool (spend + balance)'
+                  ? 'spent over the last 30 days (近30天) / top-up balance (充值余额)'
                   : 'used / total'
               }
             >

@@ -389,7 +389,7 @@ async function fetchStepfunAccount(account: StepFunAccount): Promise<ProviderRes
     const left = credit ? creditLeftRate(credit) : undefined;
     if (left === undefined) return fail('Credit plan reported no credit balance yet');
     limits.push({
-      label: 'Monthly Credit',
+      label: 'Monthly',
       kind: 'monthly',
       percent: percentUsed(left),
       resetAt: isoFromUnix(credit?.subscription_credit_reset_time),

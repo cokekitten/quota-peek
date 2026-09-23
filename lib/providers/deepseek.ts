@@ -16,11 +16,12 @@ import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accoun
  *       sk- key is rejected here (40003), and the userToken is the `value`
  *       inside localStorage.userToken on platform.deepseek.com.
  *
- * With both, the card shows "Month Spend" (calendar month, CNY) and "Balance";
- * with only the API key it degrades to the Balance row. The spend bar is the
- * fraction of the current money pool already burned this month —
- * spend/(spend+balance) — so it rises as you spend and drops when you top up.
- * A failing/absent token never fails the card; the balance row carries a note.
+ * With both, the card shows one 消费金额/充值余额 row: the last 30 days'
+ * spend (近30天, the platform's own rolling window) over the top-up balance
+ * (充值余额 — what the console headlines; granted/赠金 is not re-stated).
+ * The row's percent is just that fraction: spend / top-up. With only the API
+ * key it degrades to a bare Balance row (充值余额). A failing/absent token
+ * never fails the card; the money row carries a note.
  */
 
 const DEFAULT_BASE_URL = 'https://api.deepseek.com';
@@ -107,11 +108,12 @@ const num = (v: string | number | undefined): number => {
   return Number.isFinite(n) ? n : NaN;
 };
 
-/** One decimal — money moves in small fractions of the pool. */
-const percentPool = (spend: number, balance: number): number => {
-  const pool = spend + balance;
-  if (!(pool > 0)) return 0;
-  return Math.max(0, Math.min(100, Math.round((spend / pool) * 1000) / 10));
+/** Percent of the top-up balance burned by the window's spend (1 decimal).
+ * Money ratios may exceed 100 (spend outpacing the remaining top-up) — the
+ * number stays true; the card caps the bar width. */
+const percentRatio = (spend: number, topup: number): number => {
+  if (!(topup > 0)) return spend > 0 ? 100 : 0;
+  return Math.max(0, Math.round((spend / topup) * 1000) / 10);
 };
 
 async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderResult> {
@@ -120,10 +122,8 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
   const fail = (error: string): ProviderResult => ({ ok: false, provider, label, error });
 
   // ---- balance (official API, sk- key) -------------------------------------
-  let balance = NaN;
+  let topup = NaN;
   let currency = '';
-  let granted = NaN;
-  let toppedUp = NaN;
   let isAvailable: boolean | undefined;
   if (account.apiKey) {
     try {
@@ -142,61 +142,58 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
         .filter((x) => Number.isFinite(x.total))
         .sort((x, y) => y.total - x.total);
       if (infos.length === 0) return fail('Balance response carried no balance_infos');
-      balance = infos[0].total;
+      // 充值余额 first — the platform's headline number; payloads that don't
+      // split granted vs topped up fall back to the total.
+      topup = num(infos[0].b.topped_up_balance);
+      if (!Number.isFinite(topup)) topup = infos[0].total;
       currency = infos[0].b.currency || '';
-      granted = num(infos[0].b.granted_balance);
-      toppedUp = num(infos[0].b.topped_up_balance);
       isAvailable = data.is_available;
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }
   }
 
-  // ---- month spend (internal platform API, web userToken) ------------------
+  // ---- 30-day spend (internal platform API, web userToken) ----------------
   let spend = NaN;
   let spendError: string | undefined;
   if (account.token) {
     try {
-      spend = await fetchMonthSpend(account.token);
+      spend = await fetchSpend30d(account.token);
     } catch (err) {
       spendError = err instanceof Error ? err.message : String(err);
     }
   }
 
-  // ---- assemble rows --------------------------------------------------------
+  // ---- assemble the row(s) ------------------------------------------------
   const limits: UsageLimit[] = [];
   const unit = currency === 'USD' ? '$' : '¥';
   const haveSpend = Number.isFinite(spend) && spend >= 0;
-  const haveBalance = Number.isFinite(balance);
+  const haveTopup = Number.isFinite(topup);
+  const notes: string[] = [];
+  if (isAvailable === false) notes.push('insufficient for API calls');
+  if (!haveSpend && spendError) notes.push(`spend n/a — ${spendError}`);
+  const detail = notes.join(' · ') || undefined;
 
   if (haveSpend) {
-    const pool = spend + (haveBalance ? balance : 0);
     limits.push({
-      label: 'Month Spend',
+      label: 'Spend / Top-up',
       kind: 'spend',
-      percent: percentPool(spend, haveBalance ? balance : 0),
+      percent: haveTopup ? percentRatio(spend, topup) : 0,
       used: spend,
-      total: pool > 0 ? pool : undefined,
+      total: haveTopup ? topup : undefined,
       unit,
-      detail: haveBalance ? undefined : spendError,
+      detail,
       // Money doesn't reset; no resetAt, and 'spend' has no window duration in
       // the card's pace table, so no pace delta either.
     });
-  }
-
-  if (haveBalance) {
-    const bits: string[] = [];
-    if (Number.isFinite(granted) && granted > 0) bits.push(`granted ${unit}${fmtMoney(granted)}`);
-    if (Number.isFinite(toppedUp) && toppedUp > 0) bits.push(`top-up ${unit}${fmtMoney(toppedUp)}`);
-    if (isAvailable === false) bits.push('insufficient for API calls');
-    if (!haveSpend && spendError) bits.push(`spend n/a — ${spendError}`);
+  } else if (haveTopup) {
     limits.push({
       label: 'Balance',
       kind: 'balance',
       percent: 0,
-      used: balance,
+      used: topup,
       unit,
-      detail: bits.join(' · ') || undefined,
+      detail,
     });
   }
 
@@ -206,15 +203,16 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
   return { ok: true, provider, label, summary: { limits } };
 }
 
-/** Calendar-month spend so far, in the account's billing currency (CNY). */
-async function fetchMonthSpend(token: string): Promise<number> {
+/** Rolling 30-day spend (近30天) in the account's billing currency (CNY). */
+async function fetchSpend30d(token: string): Promise<number> {
   const now = new Date();
   const tzSec = -now.getTimezoneOffset() * 60;
   // Both bounds must be aligned to local midnights — the platform answers
   // INVALID_PARAM for anything else (and the buckets are daily: 86400).
   const midnight = (dt: Date) =>
     Math.floor(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime() / 1000);
-  const start = midnight(new Date(now.getFullYear(), now.getMonth(), 1));
+  // 近30天 = today plus the 29 days before it (30 daily buckets).
+  const start = midnight(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29));
   const end = midnight(now) + 86400; // include all of today's buckets
   const url = `${PLATFORM_USAGE_URL}?start=${start}&end=${end}&tz=${tzSec}`;
   const resp = await fetch(url, {
@@ -251,8 +249,4 @@ async function fetchMonthSpend(token: string): Promise<number> {
   }
   if (!seen) throw new Error('usage response carried no cost buckets');
   return total;
-}
-
-function fmtMoney(n: number): string {
-  return Math.abs(n) >= 100 ? n.toFixed(0) : String(Math.round(n * 100) / 100);
 }

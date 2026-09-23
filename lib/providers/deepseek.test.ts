@@ -11,6 +11,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// Mirrors the real /user/balance payload: total = granted + topped up.
 const BALANCE = {
   is_available: true,
   balance_infos: [
@@ -48,48 +49,90 @@ function mockDs(routes: Array<{ match: (url: string, auth: string) => boolean; s
 }
 
 describe('fetchDeepseekUsage', () => {
-  it('shows month spend + balance with token and key', async () => {
+  it('shows one 消费金额/充值余额 row: 30d spend over top-up balance', async () => {
     process.env.DEEPSEEK_API_KEY = KEY;
     process.env.DEEPSEEK_TOKEN = TOKEN;
     mockDs([
       { match: (u, a) => u.endsWith('/user/balance') && a === `Bearer ${KEY}`, body: BALANCE },
-      {
-        match: (u, a) => u.includes('by_api_key/cost') && a === `Bearer ${TOKEN}`,
-        body: COST(30.5),
-      },
-    ]);
-
-    const r = await fetchDeepseekUsage();
-    expect(r.ok).toBe(true);
-    // day-aligned window: both bounds share the same local-midnight offset
-    const usageCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find((c) =>
-      String(c[0]).includes('by_api_key/cost'),
-    );
-    const q = new URL(String(usageCall![0])).searchParams;
-    expect(Number(q.get('end'))! - Number(q.get('start'))!).toBeGreaterThan(0);
-    expect(
-      (Number(q.get('end'))! - Number(q.get('start'))!) % 86400,
-    ).toBe(0);
-    const spend = r.summary?.limits.find((l) => l.kind === 'spend');
-    const balance = r.summary?.limits.find((l) => l.kind === 'balance');
-    // pool = 30.5 + 69.5 = 100 → 30.5%
-    expect(spend).toMatchObject({ percent: 30.5, used: 30.5, total: 100, unit: '¥' });
-    expect(spend?.resetAt).toBeUndefined();
-    expect(balance).toMatchObject({ percent: 0, used: 69.5, unit: '¥' });
-    expect(balance?.detail).toContain('granted ¥10');
-    expect(balance?.detail).toContain('top-up ¥59.5');
-  });
-
-  it('degrades to balance-only without a token', async () => {
-    process.env.DEEPSEEK_API_KEY = KEY;
-    mockDs([
-      { match: (u) => u.endsWith('/user/balance'), body: BALANCE },
+      { match: (u, a) => u.includes('by_api_key/cost') && a === `Bearer ${TOKEN}`, body: COST(30.5) },
     ]);
 
     const r = await fetchDeepseekUsage();
     expect(r.ok).toBe(true);
     expect(r.summary?.limits).toHaveLength(1);
-    expect(r.summary?.limits[0]).toMatchObject({ kind: 'balance', used: 69.5, percent: 0 });
+    // 30.5 / 59.5 (top-up, not the 69.5 total) = 51.3%
+    expect(r.summary?.limits[0]).toMatchObject({
+      kind: 'spend',
+      label: 'Spend / Top-up',
+      percent: 51.3,
+      used: 30.5,
+      total: 59.5,
+      unit: '¥',
+    });
+    expect(r.summary?.limits[0].resetAt).toBeUndefined();
+  });
+
+  it('reports the true spend/top-up ratio even past 100%', async () => {
+    process.env.DEEPSEEK_API_KEY = KEY;
+    process.env.DEEPSEEK_TOKEN = TOKEN;
+    mockDs([
+      {
+        match: (u) => u.endsWith('/user/balance'),
+        body: { is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '100', topped_up_balance: '100' }] },
+      },
+      { match: (u) => u.includes('by_api_key/cost'), body: COST(128) },
+    ]);
+
+    const r = await fetchDeepseekUsage();
+    expect(r.summary?.limits[0]).toMatchObject({ percent: 128, used: 128, total: 100 });
+  });
+
+  it('requests a rolling 30-day window in daily buckets', async () => {
+    process.env.DEEPSEEK_API_KEY = KEY;
+    process.env.DEEPSEEK_TOKEN = TOKEN;
+    mockDs([
+      { match: (u) => u.endsWith('/user/balance'), body: BALANCE },
+      { match: (u) => u.includes('by_api_key/cost'), body: COST(1) },
+    ]);
+
+    await fetchDeepseekUsage();
+    const usageCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find((c) =>
+      String(c[0]).includes('by_api_key/cost'),
+    );
+    const q = new URL(String(usageCall![0])).searchParams;
+    const start = Number(q.get('start')!);
+    const end = Number(q.get('end')!);
+    // 近30天 = today plus the 29 days before it: 30 daily buckets, exactly.
+    expect(end - start).toBe(30 * 86400);
+    // both bounds must sit on the same local midnight (the API rejects otherwise)
+    expect(start % 86400).toBe(end % 86400);
+  });
+
+  it('falls back to the total balance when the payload does not split top-up', async () => {
+    process.env.DEEPSEEK_API_KEY = KEY;
+    process.env.DEEPSEEK_TOKEN = TOKEN;
+    mockDs([
+      {
+        match: (u) => u.endsWith('/user/balance'),
+        body: { is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '69.50' }] },
+      },
+      { match: (u) => u.includes('by_api_key/cost'), body: COST(30.5) },
+    ]);
+
+    const r = await fetchDeepseekUsage();
+    expect(r.summary?.limits[0]).toMatchObject({ used: 30.5, total: 69.5 });
+  });
+
+  it('degrades to one balance-only money row (充值余额) without a token', async () => {
+    process.env.DEEPSEEK_API_KEY = KEY;
+    mockDs([{ match: (u) => u.endsWith('/user/balance'), body: BALANCE }]);
+
+    const r = await fetchDeepseekUsage();
+    expect(r.ok).toBe(true);
+    expect(r.summary?.limits).toHaveLength(1);
+    expect(r.summary?.limits[0]).toMatchObject({ kind: 'balance', percent: 0, used: 59.5, unit: '¥' });
+    // money rows state the amount once — no granted/top-up re-run of the total
+    expect(r.summary?.limits[0].detail).toBeUndefined();
   });
 
   it('keeps the balance card when the usage token is rejected, with a note', async () => {
@@ -138,7 +181,7 @@ describe('fetchDeepseekUsage', () => {
     expect(r.error).toContain('401');
   });
 
-  it('merges two accounts exactly (Σspend / Σpool)', async () => {
+  it('merges two accounts exactly (Σspend / Σtop-up)', async () => {
     process.env.DEEPSEEK_API_KEY = KEY;
     process.env.DEEPSEEK_TOKEN = TOKEN;
     process.env.DEEPSEEK_API_KEY_2 = 'sk-2';
@@ -146,22 +189,22 @@ describe('fetchDeepseekUsage', () => {
     mockDs([
       {
         match: (u, a) => u.endsWith('/user/balance') && a === `Bearer ${KEY}`,
-        body: { is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '69.5' }] },
+        body: { is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '40', topped_up_balance: '40' }] },
       },
       {
         match: (u, a) => u.endsWith('/user/balance') && a === 'Bearer sk-2',
-        body: { is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '0' }] },
+        body: { is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '60', topped_up_balance: '60' }] },
       },
-      { match: (u, a) => u.includes('by_api_key/cost') && a === `Bearer ${TOKEN}`, body: COST(30.5) },
-      { match: (u, a) => u.includes('by_api_key/cost') && a === 'Bearer tok-2', body: COST(9.5) },
+      { match: (u, a) => u.includes('by_api_key/cost') && a === `Bearer ${TOKEN}`, body: COST(100) },
+      { match: (u, a) => u.includes('by_api_key/cost') && a === 'Bearer tok-2', body: COST(28) },
     ]);
 
     const r = await fetchDeepseekUsage();
     expect(r.ok).toBe(true);
     expect(r.summary?.accounts).toHaveLength(2);
     const spend = r.summary?.limits.find((l) => l.kind === 'spend');
-    // Σused = 40, Σpool = 30.5+69.5 + 9.5+0 = 109.5 → 36.5% → merge rounds to integer
-    expect(spend).toMatchObject({ used: 40, total: 109.5, percent: 37 });
+    // Σspend = 128, Σtop-up = 100 → 128% (the merge must not cap the truth)
+    expect(spend).toMatchObject({ used: 128, total: 100, percent: 128 });
   });
 
   it('handles numeric-string balances and zero spend', async () => {

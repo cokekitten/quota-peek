@@ -205,7 +205,7 @@ describe('fetchStepfunUsage', () => {
     expect(called.body).toBe('{}');
   });
 
-  it('renders a credit plan as one Monthly Credit row, not two false 0% windows', async () => {
+  it('renders a credit plan as one Monthly row, not two false 0% windows', async () => {
     clearEnv();
     setEnv('STEPFUN_TOKEN', jwt('dev-credit'));
     setEnv('STEPFUN_BASE_URL', base);
@@ -230,7 +230,7 @@ describe('fetchStepfunUsage', () => {
     const result = await fetchStepfunUsage();
     expect(result.ok).toBe(true);
     expect(result.summary?.limits).toHaveLength(1);
-    expect(result.summary?.limits?.[0]).toMatchObject({ kind: 'monthly', label: 'Monthly Credit', percent: 37.5 });
+    expect(result.summary?.limits?.[0]).toMatchObject({ kind: 'monthly', label: 'Monthly', percent: 37.5 });
     expect(result.summary?.planLabel).toBeUndefined();
   });
 

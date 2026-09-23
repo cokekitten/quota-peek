@@ -152,7 +152,9 @@ export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
     if (exact) {
       const used = group.reduce((s, l) => s + (l.used ?? 0), 0);
       const total = group.reduce((s, l) => s + (l.total ?? 0), 0);
-      merged.percent = clampPercent(Math.round((used / total) * 100));
+      // No cap: money ratios may exceed 100 (spend / top-up). Quota rows
+      // never reach it anyway, since used ≤ total by construction.
+      merged.percent = Math.max(0, Math.round((used / total) * 100));
       merged.used = used;
       merged.total = total;
     } else {

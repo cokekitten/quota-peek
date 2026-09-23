@@ -74,7 +74,7 @@ function mockMimo(
 }
 
 describe('fetchMimoUsage', () => {
-  it('renders plan, compensation, monthly and balance rows', async () => {
+  it('renders compensation, monthly and balance rows (Token Plan is the same counter as Monthly)', async () => {
     process.env.MIMO_COOKIE = COOKIE;
     mockMimo([
       { path: '/api/v1/tokenPlan/usage', body: USAGE, cookie: COOKIE },
@@ -85,18 +85,37 @@ describe('fetchMimoUsage', () => {
     const r = await fetchMimoUsage();
     expect(r.ok).toBe(true);
     const kinds = r.summary?.limits.map((l) => l.kind);
-    expect(kinds).toEqual(['plan', 'comp', 'monthly', 'balance']);
+    expect(kinds).toEqual(['comp', 'monthly', 'balance']);
 
-    const plan = r.summary?.limits[0];
-    expect(plan).toMatchObject({ label: 'Token Plan', percent: 25, used: 500_000_000, total: 2_000_000_000, unit: 'cr' });
-    expect(r.summary?.limits[1]).toMatchObject({ kind: 'comp', percent: 10 });
-    const monthly = r.summary?.limits[2];
-    expect(monthly).toMatchObject({ kind: 'monthly', percent: 25 });
+    expect(r.summary?.limits[0]).toMatchObject({ kind: 'comp', percent: 10 });
+    const monthly = r.summary?.limits[1];
+    expect(monthly).toMatchObject({ kind: 'monthly', percent: 25, used: 500_000_000, total: 2_000_000_000, unit: 'cr' });
     // currentPeriodEnd is UTC (the console labels it "(UTC)") — 23:59:59Z, not local.
     expect(monthly?.resetAt).toBe('2026-10-21T23:59:59.000Z');
-    expect(r.summary?.limits[3]).toMatchObject({ kind: 'balance', used: 12.34, unit: '¥' });
-    expect(r.summary?.limits[3]?.detail).toContain('cash ¥10');
-    expect(r.summary?.limits[3]?.detail).toContain('gift ¥2.34');
+    expect(r.summary?.limits[2]).toMatchObject({ kind: 'balance', used: 12.34, unit: '¥' });
+    // money rows state the amount once — no cash/gift re-run of the total
+    expect(r.summary?.limits[2]?.detail).toBeUndefined();
+  });
+
+  it('falls back to the Token Plan row when the usage payload has no month item', async () => {
+    process.env.MIMO_COOKIE = COOKIE;
+    mockMimo([
+      {
+        path: '/api/v1/tokenPlan/usage',
+        body: {
+          code: 0,
+          data: {
+            usage: {
+              items: [{ name: 'plan_total_token', used: 500_000_000, limit: 2_000_000_000, percent: 0.25 }],
+            },
+          },
+        },
+      },
+    ]);
+
+    const r = await fetchMimoUsage();
+    expect(r.ok).toBe(true);
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['plan']);
   });
 
   it('sends console headers (referer, x-timezone, UA) with the cookie', async () => {
@@ -141,7 +160,7 @@ describe('fetchMimoUsage', () => {
     const r = await fetchMimoUsage();
     expect(r.ok).toBe(true);
     const kinds = r.summary?.limits.map((l) => l.kind);
-    expect(kinds).toEqual(['plan', 'monthly']);
+    expect(kinds).toEqual(['monthly']);
   });
 
   it('falls back to the API percent when limit is missing', async () => {
@@ -160,10 +179,10 @@ describe('fetchMimoUsage', () => {
     ]);
 
     const r = await fetchMimoUsage();
-    const plan = r.summary?.limits.find((l) => l.kind === 'plan');
-    expect(plan).toMatchObject({ percent: 40 });
-    expect(plan?.used).toBeUndefined();
-    expect(plan?.total).toBeUndefined();
+    const monthly = r.summary?.limits.find((l) => l.kind === 'monthly');
+    expect(monthly).toMatchObject({ percent: 40 });
+    expect(monthly?.used).toBeUndefined();
+    expect(monthly?.total).toBeUndefined();
   });
 
   it('leaves Monthly without a countdown when tokenPlan/detail is unavailable', async () => {
@@ -257,9 +276,9 @@ describe('fetchMimoUsage', () => {
     const r = await fetchMimoUsage();
     expect(r.ok).toBe(true);
     expect(r.summary?.accounts).toHaveLength(2);
-    const plan = r.summary?.limits.find((l) => l.kind === 'plan');
+    const monthly = r.summary?.limits.find((l) => l.kind === 'monthly');
     // (0.5B + 1B) / (2B + 2B) = 37.5% → merge rounds to integer
-    expect(plan).toMatchObject({ used: 1_500_000_000, total: 4_000_000_000, percent: 38 });
+    expect(monthly).toMatchObject({ used: 1_500_000_000, total: 4_000_000_000, percent: 38 });
     // balance row: only account 1 has money; merge keeps it visible
     const balance = r.summary?.limits.find((l) => l.kind === 'balance');
     expect(balance?.used).toBe(12.34);
@@ -342,7 +361,7 @@ describe('SSO auto-refresh (seed path)', () => {
 
     const r = await fetchMimoUsage();
     expect(r.ok).toBe(true);
-    expect(r.summary?.limits[0]).toMatchObject({ kind: 'plan', percent: 25 });
+    expect(r.summary?.limits.find((l) => l.kind === 'monthly')).toMatchObject({ kind: 'monthly', percent: 25 });
     // the SSO exchange used the seed cookies …
     const authCall = fn.mock.calls.find((c) => String(c[0]).includes('serviceLogin'));
     expect(new Headers((authCall?.[1] as RequestInit | undefined)?.headers).get('Cookie')).toBe(
@@ -374,7 +393,7 @@ describe('SSO auto-refresh (seed path)', () => {
 
     const r = await fetchMimoUsage();
     expect(r.ok).toBe(true);
-    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['plan', 'comp', 'monthly']);
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['comp', 'monthly']);
     rmSync(dir, { recursive: true, force: true });
   });
 

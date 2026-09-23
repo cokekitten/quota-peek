@@ -17,7 +17,7 @@ export interface UsageLimit {
   label: string;
   /** Machine kind, e.g. "current_session" / "Primary" / "MCP". */
   kind: string;
-  /** 0–100 usage percentage. */
+  /** Usage percentage (money ratios like spend/top-up may exceed 100). */
   percent: number;
   /** Absolute usage count, if the provider reports one (e.g. GLM MCP). */
   used?: number;

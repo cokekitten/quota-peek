@@ -29,7 +29,10 @@ import { accountEnvName, fetchMultiAccount, readIndexedAccounts } from './accoun
  * Endpoints (all GET, console headers):
  *   /api/v1/tokenPlan/usage → plan_total_token / compensation_total_token
  *                            (套餐积分/补偿积分) + monthUsage (套餐月总量 —
- *                            the plan's billing window, not a calendar month)
+ *                            the plan's billing window, not a calendar month;
+ *                            plan_total_token is the same counter, so the
+ *                            Monthly row wins and Token Plan is only a
+ *                            fallback for payloads without monthUsage)
  *   /api/v1/tokenPlan/detail → currentPeriodEnd, when that window rolls over
  *                            ("有效期至 … (UTC)" on plan-manage); optional,
  *                            failures just leave rows without a countdown
@@ -347,7 +350,7 @@ async function fetchMimoAccount(account: MimoAccount): Promise<ProviderResult> {
     limits.push(row);
   };
 
-  pushItem(planItem, 'Token Plan', 'plan', true);
+  if (!monthItem) pushItem(planItem, 'Token Plan', 'plan', true);
   pushItem(compItem, 'Compensation', 'comp', true);
   pushItem(monthItem, 'Monthly', 'monthly', false);
   if (limits.length === 0) {
@@ -377,19 +380,13 @@ async function fetchMimoAccount(account: MimoAccount): Promise<ProviderResult> {
       const parsed = JSON.parse(bal.body) as BalanceResponse;
       const total = num(parsed.data?.balance);
       if (Number.isFinite(total) && total > 0) {
-        const cash = num(parsed.data?.cashBalance);
-        const gift = num(parsed.data?.giftBalance);
         const unit = parsed.data?.currency === 'USD' ? '$' : '¥';
-        const bits: string[] = [];
-        if (Number.isFinite(cash) && cash > 0) bits.push(`cash ${unit}${Math.round(cash * 100) / 100}`);
-        if (Number.isFinite(gift) && gift > 0) bits.push(`gift ${unit}${Math.round(gift * 100) / 100}`);
         limits.push({
           label: 'Balance',
           kind: 'balance',
           percent: 0,
           used: total,
           unit,
-          detail: bits.join(' · ') || undefined,
         });
       }
     }

@@ -236,7 +236,9 @@ async function getAccessToken(account: KimiAccount): Promise<string> {
   return data.access_token;
 }
 
-/** Map one quota block { limit, used, resetTime } (string numbers) into UsageLimit. */
+/** Map one quota block { limit, used, resetTime } (string numbers) into UsageLimit.
+ * The limit/used counts are percent denominators ("7 / 100") — noise next to
+ * the percentage itself, so only the derived percent ships to the card. */
 function quotaLimit(q: KimiQuota | undefined, label: string, kind: string): UsageLimit | null {
   if (!q) return null;
   const limit = Number(q.limit);
@@ -246,8 +248,6 @@ function quotaLimit(q: KimiQuota | undefined, label: string, kind: string): Usag
     label,
     kind,
     percent: Math.max(0, Math.min(100, Math.round((used / limit) * 100))),
-    used,
-    total: limit,
   };
   if (q.resetTime) {
     const t = new Date(q.resetTime);
