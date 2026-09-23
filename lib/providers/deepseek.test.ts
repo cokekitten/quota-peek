@@ -64,7 +64,7 @@ describe('fetchDeepseekUsage', () => {
     // 30.5 / (30.5 + 59.5) = 33.9% — the spend share of the money pool
     expect(r.summary?.limits[0]).toMatchObject({
       kind: 'spend',
-      label: 'Spend / Top-up',
+      label: 'Spend / Balance',
       percent: 33.9,
       used: 30.5,
       total: 59.5,

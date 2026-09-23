@@ -38,8 +38,8 @@ describe('Metric', () => {
   it('caps the bar width but not the number when usage exceeds the quota', () => {
     const html = renderToStaticMarkup(
       <Metric
-        label="Spend / Top-up"
-        limit={{ label: 'Spend / Top-up', kind: 'spend', percent: 128, used: 2428.85, total: 1897.06, unit: '¥' }}
+        label="Spend / Balance"
+        limit={{ label: 'Spend / Balance', kind: 'spend', percent: 128, used: 2428.85, total: 1897.06, unit: '¥' }}
       />,
     );
     expect(html).toMatch(/>128%</);
@@ -51,8 +51,8 @@ describe('Metric', () => {
     const resetAt = new Date(Date.now() + 10 * 864e5).toISOString();
     const html = renderToStaticMarkup(
       <Metric
-        label="Spend / Top-up"
-        limit={{ label: 'Spend / Top-up', kind: 'spend', percent: 50, used: 1, total: 1, unit: '¥', resetAt }}
+        label="Spend / Balance"
+        limit={{ label: 'Spend / Balance', kind: 'spend', percent: 50, used: 1, total: 1, unit: '¥', resetAt }}
       />,
     );
     // 10 of 30 days left → 66.7% expected by even pace; 50% actual → 17 under

@@ -179,7 +179,7 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
 
   if (haveSpend) {
     limits.push({
-      label: 'Spend / Top-up',
+      label: 'Spend / Balance',
       kind: 'spend',
       percent: haveTopup ? percentPool(spend, topup) : 0,
       used: spend,
