@@ -26,9 +26,15 @@ const getSlots = (provider: ProviderKey) => {
   // StepFun plans come in two shapes (rolling 5h/weekly windows *or* a monthly
   // credit pool) that the response only reveals per account, so this card is
   // fully data-driven — the provider names every row it returns. DeepSeek
-  // (money card: one 消费金额/充值余额 row, or a bare Balance) and MiMo
-  // (comp/monthly credits + optional balance) name their rows too.
-  if (provider === 'stepfun' || provider === 'deepseek' || provider === 'mimo') {
+  // (money card: one 消费金额/充值余额 row, or a bare Balance), MiMo
+  // (comp/monthly credits + money row) and OpenRouter (Month Spend + Key
+  // Limit) name their rows too.
+  if (
+    provider === 'stepfun' ||
+    provider === 'deepseek' ||
+    provider === 'mimo' ||
+    provider === 'openrouter'
+  ) {
     return [] as const;
   }
   return [
@@ -202,7 +208,8 @@ export function Metric({
 }) {
   // Money rows (Balance) are an amount, not a window: state the figure once,
   // with no bar, percent or pace — a progress bar over a money pool means
-  // nothing.
+  // nothing. A window rollover (e.g. OpenRouter's Month Spend) still shows
+  // as a plain countdown.
   if (limit?.kind === 'balance') {
     return (
       <div className="metric">
@@ -210,9 +217,14 @@ export function Metric({
           <span>{label}</span>
           <span className="v">{limit.used !== undefined ? fmtAbs(limit.used, limit.unit) : '—'}</span>
         </div>
-        {limit.detail && (
+        {(limit.detail || limit.resetAt) && (
           <div className="meta">
-            <span className="detail">{limit.detail}</span>
+            {limit.detail && <span className="detail">{limit.detail}</span>}
+            {limit.resetAt && (
+              <span className="reset" title={limit.resetAt}>
+                Resets in {fmtRel(limit.resetAt)}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -300,7 +312,9 @@ function paceDelta(
   const duration =
     kind === '5h' || kind === 'session'
       ? 5 * 3600e3
-      : kind === 'weekly' || kind.startsWith('weekly_')
+      : kind === 'daily'
+        ? 24 * 3600e3
+        : kind === 'weekly' || kind.startsWith('weekly_')
         ? 7 * 24 * 3600e3
         : kind === 'monthly' || kind === 'spend'
           ? 30 * 24 * 3600e3 // month-anchored; start unknown → 30d estimate
@@ -371,4 +385,5 @@ const LABELS: Record<ProviderKey, string> = {
   stepfun: 'StepFun',
   deepseek: 'DeepSeek',
   mimo: 'MiMo',
+  openrouter: 'OpenRouter',
 };

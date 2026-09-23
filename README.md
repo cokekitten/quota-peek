@@ -1,6 +1,6 @@
 # ⚡ Quota Peek
 
-> One dashboard for your AI coding-plan usage — **Claude Code**, **Codex**, **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), **Kimi** (Kimi Code 会员), **Volcengine**, **StepFun** (阶跃星辰 Step Plan), **DeepSeek** and **Xiaomi MiMo** (小米 Token Plan) in a single glance.
+> One dashboard for your AI coding-plan usage — **Claude Code**, **Codex**, **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), **Kimi** (Kimi Code 会员), **Volcengine**, **StepFun** (阶跃星辰 Step Plan), **DeepSeek**, **Xiaomi MiMo** (小米 Token Plan) and **OpenRouter** in a single glance.
 
 ![Quota Peek](docs/screenshot.png)
 
@@ -13,7 +13,7 @@ Quota Peek aggregates live usage/quota from major AI coding/subscription plans i
 
 ## ✨ Features
 
-- **Ten providers, one view** — Claude Code, Codex (ChatGPT), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), Volcengine (火山方舟 Coding Plan), StepFun (阶跃星辰 Step Plan), DeepSeek (充值余额 + 当月消费) and Xiaomi MiMo (小米 Token Plan), side by side.
+- **Eleven providers, one view** — Claude Code, Codex (ChatGPT), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), Volcengine (火山方舟 Coding Plan), StepFun (阶跃星辰 Step Plan), DeepSeek (充值余额 + 当月消费), Xiaomi MiMo (小米 Token Plan) and OpenRouter (钱包余额 + 当月消费), side by side.
 - **Independent cards** — the dashboard fires one parallel request per provider; each card renders the instant its provider responds. The slowest never blocks the rest.
 - **Normalized metrics** — providers show their real windows (**5h Window** and/or **Weekly**, depending on what the plan actually has), with precise countdowns like `Resets in 4 hr 36 min` or `Resets in 1 d 6 hr`.
 - **Smart refresh** — manual refresh, optional auto-refresh (10 min), and automatic refresh when you refocus the tab after 3+ minutes.
@@ -132,6 +132,7 @@ docker compose up -d --build
 | **StepFun** (阶跃星辰) | Session-authenticated `QueryStepPlanRateLimit` + `GetStepPlanStatus` on platform.stepfun.com (`oasis-appid/platform/webid` headers) | Paste the `cookie` header of a logged-in platform.stepfun.com into `STEPFUN_COOKIE` (or just the Oasis-Token into `STEPFUN_TOKEN`). The `sk-` API key does **not** work — it only sees your top-up balance. |
 | **DeepSeek** | Official `GET api.deepseek.com/user/balance` with the `sk-` API key; month spend via the platform's internal `usage/by_api_key/cost` with the web-console `userToken` | Set `DEEPSEEK_API_KEY` (balance). Optionally set `DEEPSEEK_TOKEN` to the `userToken` from `localStorage` on platform.deepseek.com to add the **Spend / Top-up** row — it degrades to balance-only when the token expires. |
 | **MiMo** (小米) | Console-cookie-authenticated `GET platform.xiaomimimo.com/api/v1/tokenPlan/usage` + `/api/v1/tokenPlan/detail` (reset time) + `/api/v1/usage` (当月消费) + `/api/v1/balance` (the `tp-` API key can spend quota but cannot query it). The ~24h console cookie renews itself via the Xiaomi Account SSO seed (`userId`+`passToken`) when provided | Recommended: set `MIMO_USER_ID` + `MIMO_PASS_TOKEN` (account.xiaomi.com cookies — long-lived, auto-renews the session). Fallback: `MIMO_COOKIE` with a pasted console Cookie header (~1 day). |
+| **OpenRouter** | Regular API key → `GET /api/v1/key` (that key's month spend + optional spending cap); Management key → `GET /api/v1/credits` (the wallet: `total_credits − total_usage`) | Set `OPENROUTER_API_KEY` (openrouter.ai/settings/keys). Add `OPENROUTER_MANAGEMENT_KEY` (/settings/management-keys — admin key that cannot call models; give it an expiry) for the wallet balance and the 消费/余额 row. |
 
 A provider that isn't set up returns `ok: false` with `notConfigured: true` and a hint naming the variable to set — its card stays hidden until you turn on the `No key ×N` toggle, and never breaks the others.
 
@@ -155,7 +156,7 @@ See [`.env.example`](.env.example) for the full list. The only one you must set 
 
 ### Multiple accounts (key-based providers)
 
-GLM, MiniMax, Kimi, Volcengine, StepFun, DeepSeek and MiMo support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2`, `DEEPSEEK_API_KEY_2` + `DEEPSEEK_TOKEN_2`, `MIMO_USER_ID_2` + `MIMO_PASS_TOKEN_2` (or `MIMO_COOKIE_2`) (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
+GLM, MiniMax, Kimi, Volcengine, StepFun, DeepSeek, MiMo and OpenRouter support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2`, `DEEPSEEK_API_KEY_2` + `DEEPSEEK_TOKEN_2`, `MIMO_USER_ID_2` + `MIMO_PASS_TOKEN_2` (or `MIMO_COOKIE_2`), `OPENROUTER_API_KEY_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
 
 ## 🏗️ How it works
 

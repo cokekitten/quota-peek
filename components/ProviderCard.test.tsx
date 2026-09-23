@@ -60,6 +60,17 @@ describe('Metric', () => {
     expect(html).toContain('-17%');
   });
 
+  it('renders the reset countdown on money rows', () => {
+    const resetAt = new Date(Date.now() + 7 * 864e5).toISOString();
+    const html = renderToStaticMarkup(
+      <Metric
+        label="Month Spend"
+        limit={{ label: 'Month Spend', kind: 'balance', percent: 0, used: 12.4, unit: '$', resetAt }}
+      />,
+    );
+    expect(html).toContain('Resets in 7 d');
+  });
+
   it('still surfaces detail notes on money rows', () => {
     const html = renderToStaticMarkup(
       <Metric

@@ -8,6 +8,7 @@ import { fetchVolcengineUsage, isConfigured as volcengineConfigured } from './vo
 import { fetchStepfunUsage, isConfigured as stepfunConfigured } from './stepfun';
 import { fetchDeepseekUsage, isConfigured as deepseekConfigured } from './deepseek';
 import { fetchMimoUsage, isConfigured as mimoConfigured } from './mimo';
+import { fetchOpenrouterUsage, isConfigured as openrouterConfigured } from './openrouter';
 import { PROVIDER_KEYS } from './types';
 import type { ProviderDef, ProviderKey, ProviderResult } from './types';
 
@@ -83,6 +84,13 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
     isConfigured: mimoConfigured,
     configHint:
       'set MIMO_COOKIE (Cookie header from a logged-in platform.xiaomimimo.com console)',
+  },
+  openrouter: {
+    key: 'openrouter',
+    fn: fetchOpenrouterUsage,
+    isConfigured: openrouterConfigured,
+    configHint:
+      'set OPENROUTER_API_KEY (openrouter.ai/settings/keys); add OPENROUTER_MANAGEMENT_KEY (/settings/management-keys) for the wallet balance',
   },
 };
 

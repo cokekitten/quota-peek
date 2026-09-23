@@ -11,7 +11,8 @@ export type ProviderKey =
   | 'volcengine'
   | 'stepfun'
   | 'deepseek'
-  | 'mimo';
+  | 'mimo'
+  | 'openrouter';
 
 export interface UsageLimit {
   label: string;
