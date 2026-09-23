@@ -2,9 +2,7 @@ import type { ProviderResult, UsageLimit } from './types';
 import {
   accountEnvName,
   fetchMultiAccount,
-  nextUtcDayStart,
   nextUtcMonthStart,
-  nextUtcWeekStart,
   poolSharePercent,
   readIndexedAccounts,
 } from './accounts';
@@ -17,8 +15,9 @@ import {
  *
  *   OPENROUTER_API_KEY(_N)      the regular key you call models with
  *     GET /api/v1/key → that key's own numbers only: usage_monthly (当月,
- *     UTC) and its optional spending cap (limit / limit_remaining /
- *     limit_reset). A regular key cannot see the wallet.
+ *     UTC). A regular key cannot see the wallet. (Key spending caps exist
+ *     in the payload but are deliberately not shown — an aggregate of the
+ *     capped keys misleads when most keys are uncapped.)
  *
  *   OPENROUTER_MANAGEMENT_KEY   created under /settings/management-keys;
  *     cannot call models at all
@@ -26,17 +25,15 @@ import {
  *     balance = purchased − spent, across every key on the account.
  *
  * With both, the card shows the 消费/余额 shape (Spend / Balance: month
- * spend over the wallet balance, pool-share percent, UTC month rollover)
- * plus a Key Limit bar per capped key. Regular keys alone degrade to a bare
- * Month Spend amount + Key Limit; the management key alone shows the
- * cumulative Usage / Balance.
+ * spend over the wallet balance, pool-share percent, UTC month rollover).
+ * Regular keys alone degrade to a bare Month Spend amount; the management
+ * key alone shows the cumulative Usage / Balance.
  */
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai';
 const KEY_PATH = '/api/v1/key';
 const CREDITS_PATH = '/api/v1/credits';
 const ANALYTICS_PATH = '/api/v1/analytics/query';
-const KEYS_PATH = '/api/v1/keys';
 const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS || 15000);
 const MGMT_VAR = 'OPENROUTER_MANAGEMENT_KEY';
 
@@ -104,13 +101,12 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
     }));
 
   const mgmtKey = process.env[MGMT_VAR];
-  const [keysResult, wallet, monthSpend, caps] = await Promise.all([
+  const [keysResult, wallet, monthSpend] = await Promise.all([
     keys.length
       ? fetchMultiAccount(keys, fetchOpenrouterAccount, { provider, label })
       : Promise.resolve(undefined),
     fetchWallet(mgmtKey, baseUrl),
     fetchMonthSpend(mgmtKey, baseUrl),
-    fetchKeyCaps(mgmtKey, baseUrl),
   ]);
 
   // No regular keys: the management key alone carries the whole card.
@@ -145,7 +141,6 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
         unit: '$',
       });
     }
-    if (caps) limits.push(caps);
     if (limits.length === 0) {
       return {
         ok: false,
@@ -161,9 +156,8 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
   // Fold the account-level numbers into the combined view: the whole
   // account's month spend (analytics covers every key, even unconfigured
   // ones — falling back to the configured keys' own usage_monthly) over the
-  // wallet balance, plus the account-wide cap bar. Per-account views keep
-  // their own numbers (wallet and caps are shared — summing them per account
-  // would double-count).
+  // wallet balance. Per-account views keep their own numbers (the wallet is
+  // shared — summing it per account would double-count).
   const base = keysResult.summary?.limits ?? [];
   const folded =
     wallet || monthSpend !== undefined
@@ -182,8 +176,7 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
           };
         })
       : base;
-  const limits = caps ? [...folded.filter((l) => l.label !== 'Key Limit'), caps] : folded;
-  return { ...keysResult, summary: { ...keysResult.summary!, limits } };
+  return { ...keysResult, summary: { ...keysResult.summary!, limits: folded } };
 }
 
 /**
@@ -228,59 +221,6 @@ async function fetchMonthSpend(
   }
 }
 
-/**
- * Every key's spending cap on the account — Σ of the capped ones — from the
- * Management key's key list, covering keys that are not configured here.
- * undefined when the management key is missing or the list declines; a
- * shared `limit_reset` cadence keeps its rollover, mixed cadences fall back
- * to a lifetime 'cap' bar.
- */
-async function fetchKeyCaps(
-  mgmtKey: string | undefined,
-  baseUrl: string,
-): Promise<UsageLimit | undefined> {
-  if (!mgmtKey) return undefined;
-  try {
-    const resp = await fetch(`${baseUrl}${KEYS_PATH}`, {
-      headers: { Authorization: `Bearer ${mgmtKey}`, Accept: 'application/json' },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!resp.ok) return undefined;
-    const parsed = (await resp.json()) as { data?: KeyData[] } | KeyData[];
-    const rows = Array.isArray(parsed)
-      ? parsed
-      : Array.isArray(parsed.data)
-        ? parsed.data
-        : undefined;
-    if (!rows) return undefined;
-    let used = 0;
-    let total = 0;
-    const cadences = new Set<string>();
-    for (const k of rows) {
-      const cap = num(k.limit);
-      if (!Number.isFinite(cap) || cap <= 0) continue;
-      const remaining = num(k.limit_remaining);
-      used += Math.max(0, cap - (Number.isFinite(remaining) ? remaining : cap));
-      total += cap;
-      cadences.add((k.limit_reset ?? '').trim().toLowerCase());
-    }
-    if (total <= 0) return undefined; // no key carries a cap → no row
-    const { kind, resetAt } = capWindow(cadences.size === 1 ? [...cadences][0] : '');
-    return {
-      label: 'Key Limit',
-      kind,
-      percent: Math.max(0, Math.round((used / total) * 1000) / 10),
-      used: round2(used),
-      total: round2(total),
-      unit: '$',
-      ...(resetAt ? { resetAt } : {}),
-    };
-  } catch {
-    return undefined;
-  }
-}
-
 /** The account wallet via the Management key: spent + remaining, in USD. */
 async function fetchWallet(
   mgmtKey: string | undefined,
@@ -301,20 +241,6 @@ async function fetchWallet(
     return { spent: round2(spent), balance: Math.max(0, round2(credits - spent)) };
   } catch {
     return undefined;
-  }
-}
-
-/** The key cap's rollover — OpenRouter windows are UTC (day / Mon–Sun / month). */
-function capWindow(cadence: string | null | undefined): { kind: string; resetAt?: string } {
-  switch ((cadence ?? '').trim().toLowerCase()) {
-    case 'daily':
-      return { kind: 'daily', resetAt: nextUtcDayStart() };
-    case 'weekly':
-      return { kind: 'weekly', resetAt: nextUtcWeekStart() };
-    case 'monthly':
-      return { kind: 'monthly', resetAt: nextUtcMonthStart() };
-    default:
-      return { kind: 'cap' }; // lifetime cap (or unknown cadence): no rollover
   }
 }
 
@@ -365,24 +291,8 @@ async function fetchOpenrouterAccount(account: OrAccount): Promise<ProviderResul
     });
   }
 
-  const cap = num(data.limit);
-  const remaining = num(data.limit_remaining);
-  if (Number.isFinite(cap) && cap > 0) {
-    const spent = Math.max(0, cap - (Number.isFinite(remaining) ? remaining : cap));
-    const { kind, resetAt } = capWindow(data.limit_reset);
-    limits.push({
-      label: 'Key Limit',
-      kind,
-      percent: Math.max(0, Math.round((spent / cap) * 1000) / 10),
-      used: spent,
-      total: cap,
-      unit: '$',
-      ...(resetAt ? { resetAt } : {}),
-    });
-  }
-
   if (limits.length === 0) {
-    return fail('key reported neither monthly usage nor a spending cap');
+    return fail('key reported no monthly usage');
   }
   return { ok: true, provider, label, summary: { limits } };
 }

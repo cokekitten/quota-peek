@@ -236,24 +236,6 @@ export function nextUtcMonthStart(): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
 }
 
-/** Next UTC day's 00:00 (OpenRouter's daily buckets are UTC). */
-export function nextUtcDayStart(): string {
-  const now = new Date();
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
-  ).toISOString();
-}
-
-/** Next UTC Monday 00:00 (OpenRouter's weeks run Monday–Sunday). */
-export function nextUtcWeekStart(): string {
-  const now = new Date();
-  const dow = now.getUTCDay(); // Sun = 0 … Sat = 6
-  const days = ((8 - dow) % 7) || 7;
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + days),
-  ).toISOString();
-}
-
 /** Window durations implied by kind, mirroring the card's pace math. */
 const KIND_DURATION_MS: Record<string, number> = {
   '5h': 5 * 3600e3,
@@ -263,8 +245,6 @@ const KIND_DURATION_MS: Record<string, number> = {
   monthly: 30 * 24 * 3600e3,
   // Money rows are month-scoped (当月消费) — same 30d estimate as 'monthly'.
   spend: 30 * 24 * 3600e3,
-  // Per-key caps with a daily cadence roll over every UTC day.
-  daily: 24 * 3600e3,
 };
 
 /** Best available utilization fraction for a row, 0–1. */

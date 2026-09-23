@@ -312,9 +312,7 @@ function paceDelta(
   const duration =
     kind === '5h' || kind === 'session'
       ? 5 * 3600e3
-      : kind === 'daily'
-        ? 24 * 3600e3
-        : kind === 'weekly' || kind.startsWith('weekly_')
+      : kind === 'weekly' || kind.startsWith('weekly_')
         ? 7 * 24 * 3600e3
         : kind === 'monthly' || kind === 'spend'
           ? 30 * 24 * 3600e3 // month-anchored; start unknown → 30d estimate

@@ -55,16 +55,14 @@ function mockOr(routes: Array<{ path: string; status?: number; body: unknown; au
 }
 
 describe('fetchOpenrouterUsage', () => {
-  it('shows the Month Spend amount and the Key Limit bar', async () => {
+  it('shows the Month Spend amount (key caps are deliberately not shown)', async () => {
     process.env.OPENROUTER_API_KEY = KEY;
     mockOr([{ path: '/api/v1/key', body: { data: KEY_DATA }, auth: `Bearer ${KEY}` }]);
 
     const r = await fetchOpenrouterUsage();
     expect(r.ok).toBe(true);
-    const kinds = r.summary?.limits.map((l) => l.kind);
-    expect(kinds).toEqual(['balance', 'monthly']);
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['balance']);
 
-    // Month Spend: a bare money amount, rolling over at the UTC month boundary
     const spend = r.summary?.limits[0];
     expect(spend).toMatchObject({ label: 'Month Spend', kind: 'balance', used: 12.4, unit: '$' });
     expect(spend?.total).toBeUndefined();
@@ -72,38 +70,6 @@ describe('fetchOpenrouterUsage', () => {
     expect(spendReset.getUTCDate()).toBe(1);
     expect(spendReset.getUTCHours()).toBe(0);
     expect(spendReset.getUTCMonth()).toBe((new Date().getUTCMonth() + 1) % 12);
-
-    // Key Limit: 50 − 30 = 20 of the cap burned → 40%
-    const cap = r.summary?.limits[1];
-    expect(cap).toMatchObject({
-      label: 'Key Limit',
-      kind: 'monthly',
-      percent: 40,
-      used: 20,
-      total: 50,
-      unit: '$',
-    });
-  });
-
-  it('maps limit_reset cadences onto the window rollover', async () => {
-    process.env.OPENROUTER_API_KEY = KEY;
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-09-23T13:24:00Z')); // a Wednesday
-    const cases: Array<[reset: string | null, kind: string, resetAt: string | undefined]> = [
-      ['daily', 'daily', '2026-09-24T00:00:00.000Z'],
-      ['weekly', 'weekly', '2026-09-28T00:00:00.000Z'], // next Monday (UTC weeks are Mon–Sun)
-      ['monthly', 'monthly', '2026-10-01T00:00:00.000Z'],
-      [null, 'cap', undefined],
-    ];
-    for (const [limit_reset, kind, resetAt] of cases) {
-      mockOr([
-        { path: '/api/v1/key', body: { data: { ...KEY_DATA, limit_reset } } },
-      ]);
-      const r = await fetchOpenrouterUsage();
-      const cap = r.summary?.limits[1];
-      expect(cap?.kind, `limit_reset=${limit_reset}`).toBe(kind);
-      expect(cap?.resetAt, `limit_reset=${limit_reset}`).toBe(resetAt);
-    }
   });
 
   it('combines the wallet balance into a Spend / Balance money row', async () => {
@@ -120,7 +86,7 @@ describe('fetchOpenrouterUsage', () => {
 
     const r = await fetchOpenrouterUsage();
     expect(r.ok).toBe(true);
-    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend', 'monthly']);
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend']);
     // 12.4 / (12.4 + 16.3) = 43.2% — pool share, MiMo-style
     expect(r.summary?.limits[0]).toMatchObject({
       label: 'Spend / Balance',
@@ -131,44 +97,6 @@ describe('fetchOpenrouterUsage', () => {
       unit: '$',
     });
     expect(new Date(r.summary?.limits[0].resetAt!).getUTCDate()).toBe(1);
-  });
-
-  it('shows a cumulative Usage / Balance row with the management key alone', async () => {
-    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
-    mockOr([
-      {
-        path: '/api/v1/credits',
-        body: { data: { total_credits: 100, total_usage: 30 } },
-        auth: 'Bearer sk-or-mgmt',
-      },
-    ]);
-
-    const r = await fetchOpenrouterUsage();
-    expect(r.ok).toBe(true);
-    expect(r.summary?.limits).toHaveLength(1);
-    // $30 spent of the $100 ever purchased → 30% pool share, no month window
-    expect(r.summary?.limits[0]).toMatchObject({
-      label: 'Usage / Balance',
-      kind: 'spend',
-      percent: 30,
-      used: 30,
-      total: 70,
-      unit: '$',
-    });
-    expect(r.summary?.limits[0].resetAt).toBeUndefined();
-  });
-
-  it('omits the Key Limit row when the key has no cap', async () => {
-    process.env.OPENROUTER_API_KEY = KEY;
-    mockOr([
-      {
-        path: '/api/v1/key',
-        body: { data: { ...KEY_DATA, limit: null, limit_remaining: null, limit_reset: null } },
-      },
-    ]);
-
-    const r = await fetchOpenrouterUsage();
-    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['balance']);
   });
 
   it('prefers the account-wide month spend from analytics', async () => {
@@ -231,6 +159,7 @@ describe('fetchOpenrouterUsage', () => {
     ]);
 
     const r = await fetchOpenrouterUsage();
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend']);
     expect(r.summary?.limits[0]).toMatchObject({
       label: 'Spend / Balance',
       used: 12.4,
@@ -266,92 +195,32 @@ describe('fetchOpenrouterUsage', () => {
     expect(new Date(r.summary?.limits[0].resetAt!).getUTCDate()).toBe(1);
   });
 
-  it('aggregates key caps from the keys list (management key)', async () => {
+  it('shows a cumulative Usage / Balance row with the management key alone', async () => {
     process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
     mockOr([
       {
-        path: '/api/v1/analytics/query',
-        body: { data: { data: [{ date__day: '2026-09-23', total_usage: 5 }] } },
-      },
-      { path: '/api/v1/credits', body: { data: { total_credits: 100, total_usage: 83.7 } } },
-      {
-        path: '/api/v1/keys',
-        body: {
-          data: [
-            { name: 'usage', limit: null, limit_remaining: null, limit_reset: null },
-            { name: 'leo', limit: 100, limit_remaining: 55.10687033, limit_reset: null },
-          ],
-        },
+        path: '/api/v1/credits',
+        body: { data: { total_credits: 100, total_usage: 30 } },
+        auth: 'Bearer sk-or-mgmt',
       },
     ]);
 
     const r = await fetchOpenrouterUsage();
-    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend', 'cap']);
-    // 100 − 55.10687033 = $44.89 burned of the $100 cap → 44.9%
-    expect(r.summary?.limits[1]).toMatchObject({
-      label: 'Key Limit',
-      kind: 'cap',
-      used: 44.89,
-      total: 100,
-      percent: 44.9,
+    expect(r.ok).toBe(true);
+    expect(r.summary?.limits).toHaveLength(1);
+    // $30 spent of the $100 ever purchased → 30% pool share, no month window
+    expect(r.summary?.limits[0]).toMatchObject({
+      label: 'Usage / Balance',
+      kind: 'spend',
+      percent: 30,
+      used: 30,
+      total: 70,
+      unit: '$',
     });
-    expect(r.summary?.limits[1].resetAt).toBeUndefined();
+    expect(r.summary?.limits[0].resetAt).toBeUndefined();
   });
 
-  it('prefers the account-wide caps over the configured key\'s own cap', async () => {
-    process.env.OPENROUTER_API_KEY = KEY;
-    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
-    mockOr([
-      { path: '/api/v1/credits', body: { data: { total_credits: 100, total_usage: 83.7 } } },
-      {
-        path: '/api/v1/keys',
-        body: {
-          data: [{ name: 'leo', limit: 100, limit_remaining: 55.10687033, limit_reset: null }],
-        },
-      },
-      { path: '/api/v1/key', body: { data: KEY_DATA }, auth: `Bearer ${KEY}` },
-    ]);
-
-    const r = await fetchOpenrouterUsage();
-    // the configured key's own 20/50 cap is superseded by the account's 44.89/100
-    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend', 'cap']);
-    expect(r.summary?.limits[1]).toMatchObject({ used: 44.89, total: 100 });
-  });
-
-  it('maps a shared cap cadence onto the rollover, mixed cadences fall back to cap', async () => {
-    process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-09-23T13:24:00Z'));
-    const cases: Array<[
-      resets: Array<string | null>,
-      kind: string,
-      resetAt: string | undefined,
-    ]> = [
-      [['monthly', 'monthly'], 'monthly', '2026-10-01T00:00:00.000Z'],
-      [['monthly', 'daily'], 'cap', undefined],
-    ];
-    for (const [resets, kind, resetAt] of cases) {
-      mockOr([
-        {
-          path: '/api/v1/keys',
-          body: {
-            data: resets.map((limit_reset, i) => ({
-              name: `k${i}`,
-              limit: 50,
-              limit_remaining: 40,
-              limit_reset,
-            })),
-          },
-        },
-      ]);
-      const r = await fetchOpenrouterUsage();
-      const cap = r.summary?.limits[0];
-      expect(cap?.kind, `resets=${resets.join(',')}`).toBe(kind);
-      expect(cap?.resetAt, `resets=${resets.join(',')}`).toBe(resetAt);
-    }
-  });
-
-  it('merges two keys (Σspend, Σcap)', async () => {
+  it('merges two keys (Σspend)', async () => {
     process.env.OPENROUTER_API_KEY = KEY;
     process.env.OPENROUTER_API_KEY_2 = 'sk-or-v1-two';
     vi.stubGlobal(
@@ -369,11 +238,9 @@ describe('fetchOpenrouterUsage', () => {
     const r = await fetchOpenrouterUsage();
     expect(r.ok).toBe(true);
     expect(r.summary?.accounts).toHaveLength(2);
+    expect(r.summary?.limits.map((l) => l.kind)).toEqual(['balance']);
     const spend = r.summary?.limits.find((l) => l.label === 'Month Spend');
     expect(spend).toMatchObject({ used: 20 });
-    const cap = r.summary?.limits.find((l) => l.label === 'Key Limit');
-    // (20 + 10) burned of (50 + 50) caps → 30%
-    expect(cap).toMatchObject({ used: 30, total: 100, percent: 30 });
   });
 
   it('fails with a re-check hint on 401', async () => {
