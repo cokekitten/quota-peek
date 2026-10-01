@@ -634,3 +634,216 @@ code {
   border-radius: 4px;
   font-size: 11px;
 }
+
+/* ============================================================
+   History page (/history)
+   ============================================================ */
+.brand .logo.back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  text-decoration: none;
+  font-size: 15px;
+  line-height: 1;
+}
+.history-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 28px 4px;
+}
+.history-bar .seg.wide {
+  flex-wrap: wrap;
+}
+.history-bar .toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.history-bar .toggle input {
+  accent-color: var(--accent);
+}
+.pill.csv {
+  text-decoration: none;
+  color: var(--muted);
+}
+.pill.csv:hover {
+  color: var(--text);
+}
+main.history {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1080px;
+  margin: 0 auto;
+  width: 100%;
+}
+.card.series .card-head {
+  margin-bottom: 10px;
+}
+.card-head .delta {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+  color: var(--muted);
+}
+.card-head .delta.over {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.card-head .delta.under {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+.card.series .meta {
+  margin-top: 8px;
+}
+
+.chart {
+  margin: 0 -4px;
+}
+.chart.empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 18px 0;
+  text-align: center;
+}
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: 120px;
+  overflow: visible;
+}
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.chart-axis {
+  fill: var(--muted);
+  font-size: 9px;
+  font-family: var(--mono, ui-monospace, monospace);
+  text-anchor: start;
+  /* Stay readable where the line/area passes underneath. */
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+.chart-axis.mid {
+  text-anchor: middle;
+}
+.chart-axis.end {
+  text-anchor: end;
+}
+.chart-area {
+  fill: color-mix(in srgb, var(--accent) 12%, transparent);
+  stroke: none;
+}
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart-end {
+  fill: var(--accent);
+}
+.chart-reset {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.5;
+}
+.chart-last {
+  fill: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+  text-anchor: start;
+}
+:root[data-theme='c'] .chart-line,
+:root[data-theme='c'] .chart-end {
+  stroke: var(--text);
+  fill: var(--text);
+}
+:root[data-theme='c'] .chart-area {
+  fill: rgba(255, 255, 255, 0.06);
+}
+
+/* Refresh log */
+.card.log table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+.card.log th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 4px 8px 8px 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.card.log td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.card.log tr:last-child td {
+  border-bottom: none;
+}
+.card.log tr.bad td {
+  color: color-mix(in srgb, var(--red) 80%, var(--text));
+}
+.card.log td.mono {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.card.log td.note {
+  color: var(--muted);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card.log td.muted {
+  color: var(--muted);
+}
+.card.log .tag.poll {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--tag-color);
+}
+.card.log .tag.page {
+  background: color-mix(in srgb, var(--accent-2) 14%, transparent);
+  color: var(--accent-2);
+}
+.card.log .chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0 6px 4px 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.card.log .chip b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.chart-last.flip {
+  text-anchor: end;
+}
