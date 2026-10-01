@@ -40,3 +40,13 @@ services:
       # MiMo renewed-session cache dir (same pattern as StepFun: the rotated
       # seed + fresh ~24h cookie must survive a recreate).
       - ./mimo-session:/secrets/mimo
+      # Usage history: the background sampler writes every poll here. Keep it
+      # on a host directory so a recreate doesn't erase the timeline — the
+      # container runs as uid 1000 (`node`), so create it once with
+      #   mkdir -p data && chown 1000:1000 data
+      - ./data:/app/data
+      # Background sampling. QP_POLL=0 turns the sampler off (usage then gets
+      # recorded only when someone loads the dashboard).
+      QP_POLL: ${QP_POLL:-1}
+      QP_POLL_INTERVAL_MS: ${QP_POLL_INTERVAL_MS:-300000}
+      QP_HISTORY_DAYS: ${QP_HISTORY_DAYS:-90}

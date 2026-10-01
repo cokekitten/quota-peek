@@ -9,7 +9,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/node-%3E%3D18.18-green)](https://nodejs.org/)
 
-Quota Peek aggregates live usage/quota from major AI coding/subscription plans into one clean, dark dashboard. No cron. No database. No background jobs. Providers are queried live on every request.
+Quota Peek aggregates live usage/quota from major AI coding/subscription plans into one clean, dark dashboard. Cards are always queried live; a small background sampler also records every reading to a local SQLite file, so each card grows a real trend line and [/history](#-usage-history) can show what any poll or refresh actually saw.
 
 ## ✨ Features
 
@@ -17,9 +17,10 @@ Quota Peek aggregates live usage/quota from major AI coding/subscription plans i
 - **Independent cards** — the dashboard fires one parallel request per provider; each card renders the instant its provider responds. The slowest never blocks the rest.
 - **Normalized metrics** — providers show their real windows (**5h Window** and/or **Weekly**, depending on what the plan actually has), with precise countdowns like `Resets in 4 hr 36 min` or `Resets in 1 d 6 hr`.
 - **Smart refresh** — manual refresh, optional auto-refresh (10 min), and automatic refresh when you refocus the tab after 3+ minutes.
+- **Usage history** — a background sampler (5 min, no cron) records every provider reading to a local SQLite file: percentage, absolute figures, each account separately, and failures. Cards get a sparkline plus a change badge (`+2.5%`, `-¥0.31`, `↻ reset` when a window rolled over), and `/history` charts any window over 24 h / 7 d / 30 d next to a log of what each read saw. CSV export included.
 - **Resilient** — a provider that errors out degrades to an offline card; it never breaks the others. Claude's results are cached briefly and served stale on failure.
 - **No dead cards** — a provider with no key / no credential file is hidden instead of occupying a slot; the `No key ×N` pill in the header reveals them (each one names the variable to set) and the choice is remembered in `localStorage`. A provider that **is** configured but failing — expired token, 429, network down — never hides, because that's the signal you opened the dashboard for.
-- **Zero infrastructure** — a single Next.js app. Run it, open it, done.
+- **Zero infrastructure** — a single Next.js app plus one SQLite file. Run it, open it, done; history is just a file you can delete or back up.
 
 ## 🚀 Quick start
 
@@ -69,8 +70,14 @@ docker run -d --name quota-peek -p 5928:5928 \
   -v "$HOME/.claude/.credentials.json:/secrets/claude-creds.json:ro" \
   -v "$HOME/.codex/auth.json:/secrets/codex-auth.json:ro" \
   -v "$HOME/.grok:/secrets/grok" \
+  -v "$PWD/data:/app/data" \
   quota-peek
 ```
+
+Add `-v "$PWD/data:/app/data"` to keep the usage history across container
+recreates (create it first with `mkdir -p data && chown 1000:1000 data` — the
+container runs as uid 1000). Add `-e QP_POLL=0` to turn the background sampler
+off.
 
 → open **http://localhost:5928**
 
@@ -156,6 +163,17 @@ See [`.env.example`](.env.example) for the full list. The only one you must set 
 
 **OpenRouter**'s card is account-wide through the Management key (`/settings/management-keys` — admin-only, cannot call models; give it an expiry): the wallet from `GET /api/v1/credits`, the month from `POST /api/v1/analytics/query` (every key on the account, even unconfigured ones — per-key `usage_monthly` understates as soon as a key is missing). A regular `OPENROUTER_API_KEY` is only a fallback source for per-key numbers when the management key is absent. Key spending caps are deliberately not shown: most keys are uncapped, so any aggregate of the capped few reads like an account limit and misleads.
 
+**Usage history** (all optional, sensible defaults):
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `QP_POLL` | `1` | Background sampler on/off. `0` records only when someone loads the dashboard. |
+| `QP_POLL_INTERVAL_MS` | `300000` | Sampling interval (floor: 60 s — the upstreams rate-limit). |
+| `QP_DATA_DIR` | `./data` | Where `quota-peek.db` lives. Docker: `/app/data`, mounted as a volume. |
+| `QP_HISTORY_DAYS` | `90` | Raw sample retention; older samples are pruned each round. |
+| `QP_CACHE_TTL_MS` | `60000` | Reuse window so a poll and a page load don't double-hit a provider. |
+| `QP_SELF_URL` | `http://127.0.0.1:$PORT` | Where the boot hook hands off to the poller (set it if the port is mapped). |
+
 ### Multiple accounts (key-based providers)
 
 GLM, MiniMax, Kimi, Volcengine, StepFun, DeepSeek, MiMo and OpenRouter support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2`, `DEEPSEEK_API_KEY_2` + `DEEPSEEK_TOKEN_2`, `MIMO_USER_ID_2` + `MIMO_PASS_TOKEN_2` (or `MIMO_COOKIE_2`), `OPENROUTER_API_KEY_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
@@ -163,8 +181,13 @@ GLM, MiniMax, Kimi, Volcengine, StepFun, DeepSeek, MiMo and OpenRouter support m
 ## 🏗️ How it works
 
 ```
-GET /api/usage/[provider]   ← single dynamic route: claude | codex | glm | supergrok | minimax | kimi | volcengine | stepfun | deepseek | mimo
-GET /                        ← the dashboard (static)
+GET /api/usage/[provider]      ← single dynamic route: claude | codex | glm | supergrok | minimax | kimi | volcengine | stepfun | deepseek | mimo | openrouter
+GET /api/history               ← short window for the card sparklines (all providers, one request)
+GET /api/history/[provider]    ← one channel: chart series + refresh log
+GET /api/history/[provider]/export   ← the same rows as CSV
+GET /api/poll                  ← poller control: GET starts/reports, POST runs a round now (loopback only)
+GET /                           ← the dashboard
+GET /history                    ← the history page
 ```
 
 Each provider is a tiny server-only module in `lib/providers/`. They normalize their wildly different upstream responses into one shape:
@@ -188,15 +211,53 @@ app/
   globals.css                     # dark dashboard styles
   icon.svg                        # favicon
   layout.tsx · page.tsx           # root layout + server shell → <Dashboard />
+  history/page.tsx                # 'use client' — provider/range switch, charts, refresh log
 components/
-  Dashboard.tsx                   # 'use client' — parallel fetches, refresh logic, refocus
-  ProviderCard.tsx                # 'use client' — per-card state, bars, countdowns
+  Dashboard.tsx                   # 'use client' — parallel fetches, refresh logic, refocus, sparkline data
+  ProviderCard.tsx                # 'use client' — per-card state, bars, countdowns, Δ badge
+  Sparkline.tsx                   # 'use client' — SVG trend geometry (segments, gaps, reset rules)
+  TrendChart.tsx                  # 'use client' — the same geometry with axes, for /history
   types.ts                        # client-side response types
+lib/history/
+  db.ts                           # SQLite connection + schema (two tables, additive)
+  extract.ts                      # ProviderResult → sample + rows (schema-agnostic)
+  store.ts                        # append / range queries / prune / CSV rows
+  series.ts                       # bucketing, deltas, rollover + gap detection
+  liveCache.ts                    # 60s result reuse shared by the poller and page loads
+  poller.ts                       # the background sampler (one timer, one process)
+  *.test.ts                       # the store is tested against a real temporary database
 lib/providers/
   claude.ts · codex.ts · glm.ts · supergrok.ts · minimax.ts · kimi.ts · volcengine.ts · stepfun.ts   # server-only providers
   index.ts                        # registry + fetchOneUsage()
   types.ts                        # shared domain types
 ```
+
+## 📈 Usage history
+
+Every provider read is a sample: the window percentages, the absolute figures
+(balance, month spend, credit counts), **each configured account separately**,
+and — when a read fails — the failure itself, so a flat line is never confused
+with "no data".
+
+- **A background sampler** fetches all configured providers every 5 minutes
+  (`QP_POLL_INTERVAL_MS`) whether or not anyone has the dashboard open, plus a
+  sample for every page-driven read (`source` is `poll` or `page` in the data).
+  It starts itself through `GET /api/poll` at boot and is idempotent — one
+  timer per process, and it never starts a second round while one is running.
+- **Cards** get a sparkline of the last 6 h and a change badge against the
+  previous reading. Money rows are charted in their own unit (¥ spent, balance
+  left), because a balance has no percentage to speak of.
+- **`/history`** charts each window (and each account) over 24 h / 7 d / 30 d,
+  with the refresh log underneath: one row per read, source, values, error.
+  `Export CSV` gives the raw rows for spreadsheet work.
+- **Honest charts.** A window rollover is never reported as a drop: when the
+  row's own reset clock moves by more than 5 minutes the delta becomes
+  `↻ reset` and the line breaks. Gaps longer than 3 sampling intervals (a
+  stopped container, a sleeping laptop) break the line too, instead of drawing
+  a slope that never happened.
+- **Storage** is a single SQLite file (`sample` + `sample_row`, WAL) — about
+  3.2k samples/day across all providers, ~90 days by default, pruned
+  automatically. Back it up by copying the file; delete it to start over.
 
 ## ⚠️ Notes & caveats
 
@@ -206,6 +267,7 @@ lib/providers/
 - **Kimi** access tokens expire after ~15 min and are refreshed the same way. In Docker, prefer `KIMI_API_KEY` since the mounted credentials file is read-only.
 - **GLM** window labels are derived from each limit's actual `nextResetTime`, so they stay correct even as the opaque `unit` codes shift.
 - The **GLM** key in your `.env` is read at request time — restart the server after changing it.
+- **The sampler assumes one server process.** Running multiple replicas would poll and record N times; give each its own `QP_DATA_DIR` or run one replica with polling on.
 
 ## 🤝 Contributing
 
