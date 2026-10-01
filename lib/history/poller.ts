@@ -15,6 +15,8 @@
  *    spending" from "no data") and never retried inside the same round.
  */
 
+import os from 'node:os';
+import { acquireLease, DEFAULT_LEASE_MS, leaseState, ownerId, releaseLease } from './db';
 import { PROVIDERS, PROVIDER_KEYS } from '../providers';
 import type { ProviderKey, ProviderResult } from '../providers/types';
 import { extractSample } from './extract';
@@ -40,10 +42,24 @@ export interface PollSummary {
   tookMs: number;
   providers: PollProviderOutcome[];
   pruned: boolean;
+  /** Set when the round deliberately did not sample. */
+  skipped?: SkipReason;
 }
+
+/** Why a round did not run (or did). */
+export type SkipReason = 'lease_held_elsewhere' | 'already_running' | 'disabled';
 
 export interface PollOptions {
   fetchUsage?: UsageFetcher;
+  /**
+   * Only this owner may sample. Defaults to this process; the lease in the
+   * database is what actually arbitrates between replicas.
+   */
+  owner?: string;
+  /** Lease lifetime for a round. */
+  leaseMs?: number;
+  /** Skip the lease entirely (single-process installs, tests). */
+  noLease?: boolean;
   /** Defaults to every provider that has credentials. */
   keys?: readonly ProviderKey[];
   now?: number;
@@ -64,9 +80,20 @@ export function pollableKeys(): ProviderKey[] {
   });
 }
 
-/** One full round. Never throws: a broken provider is an outcome, not an error. */
+/**
+ * One full round. Never throws: a broken provider is an outcome, not an error.
+ *
+ * Takes the sampling lease first. With several replicas sharing one database
+ * that is what keeps the upstream calls at one round's worth instead of N.
+ */
 export async function pollOnce(opts: PollOptions = {}): Promise<PollSummary> {
   const started = opts.now ?? Date.now();
+  if (!opts.noLease) {
+    const owner = opts.owner ?? ownerId();
+    if (!acquireLease(owner, opts.leaseMs ?? leaseTtlMs(), started)) {
+      return { at: started, tookMs: 0, providers: [], pruned: false, skipped: 'lease_held_elsewhere' };
+    }
+  }
   const fetchUsage = opts.fetchUsage ?? registryFetcher;
   const keys =
     opts.keys ??
@@ -112,6 +139,12 @@ export async function pollOnce(opts: PollOptions = {}): Promise<PollSummary> {
   return { at: started, tookMs: Date.now() - started, providers, pruned };
 }
 
+/** Lease lifetime: long enough to cover a slow round plus a missed tick. */
+export function leaseTtlMs(intervalMs: number = pollIntervalMs()): number {
+  const n = Number(process.env.QP_POLL_LEASE_MS);
+  return Number.isFinite(n) && n > 0 ? n : Math.max(DEFAULT_LEASE_MS, 2 * intervalMs);
+}
+
 const REGISTRY = Symbol.for('quota-peek.poller');
 
 interface PollerState {
@@ -152,6 +185,7 @@ export async function pollIfIdle(opts: PollOptions = {}): Promise<PollSummary | 
     const now = opts.now ?? Date.now();
     const doPrune = opts.prune ?? now - s.lastPruneAt >= PRUNE_INTERVAL_MS;
     const summary = await pollOnce({ ...opts, prune: doPrune });
+    if (summary.skipped) return summary; // another replica owns sampling
     if (doPrune) s.lastPruneAt = now;
     s.last = summary;
     s.rounds += 1;
@@ -177,17 +211,21 @@ export function startPoller(opts: StartOptions = {}): void {
   if (s.timer) return;
   const { intervalMs, initialDelayMs, ...round } = opts;
   const interval = Math.max(1000, intervalMs ?? pollIntervalMs());
+  const owner = round.owner ?? ownerId();
   const initial = initialDelayMs ?? Math.round(Math.random() * Math.min(interval, 30_000));
   const tick = () => {
-    void pollIfIdle(round).then((summary) => {
-      if (summary) {
-        const bad = summary.providers.filter((p) => !p.ok).map((p) => p.provider);
-        // One line per round: what the poll did, and who failed. No secrets.
-        console.log(
-          `[quota-peek] poll ${summary.providers.length} provider(s) in ${summary.tookMs}ms` +
-            (bad.length ? ` · failed: ${bad.join(', ')}` : ''),
-        );
+    void pollIfIdle({ ...round, owner }).then((summary) => {
+      if (!summary) return;
+      if (summary.skipped === 'lease_held_elsewhere') {
+        noteLeaseHolder();
+        return;
       }
+      const bad = summary.providers.filter((p) => !p.ok).map((p) => p.provider);
+      // One line per round: what the poll did, and who failed. No secrets.
+      console.log(
+        `[quota-peek] poll ${summary.providers.length} provider(s) in ${summary.tookMs}ms` +
+          (bad.length ? ` · failed: ${bad.join(', ')}` : ''),
+      );
     });
   };
   if (initial > 0) {
@@ -205,6 +243,26 @@ export function stopPoller(): void {
     clearInterval(s.timer);
     s.timer = null;
   }
+  // Hand the lease back so another replica can take over immediately instead
+  // of waiting out the TTL.
+  releaseLease();
+}
+
+/** Say once per hour who else is sampling, instead of every tick. */
+let leaseNoteAt = 0;
+function noteLeaseHolder(): void {
+  const now = Date.now();
+  if (now - leaseNoteAt < 3600e3) return;
+  leaseNoteAt = now;
+  const lease = leaseState(now);
+  console.log(
+    `[quota-peek] another instance is sampling (${lease?.owner ?? 'unknown'}) — this one stays idle`,
+  );
+}
+
+/** Who currently holds the sampling lease, for the status endpoint. */
+export function currentLease(): ReturnType<typeof leaseState> {
+  return leaseState();
 }
 
 /** Test seam: drop the singleton entirely. */

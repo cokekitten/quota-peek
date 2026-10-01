@@ -116,6 +116,10 @@ export interface HistoryLogEntry {
   errKind: string | null;
   errText: string | null;
   planLabel: string | null;
+  /** Account keys that failed inside an otherwise-successful read. */
+  errScopes: string[];
+  /** Each account's plan label, so a merged card keeps its memberships. */
+  planLabels: { key: string; label: string }[];
   partial: boolean;
   stale: boolean;
   rows: HistoryLogRow[];
@@ -128,6 +132,8 @@ export interface ProviderHistory {
   series: HistorySeries[];
   log: HistoryLogEntry[];
   samples: number;
+  /** Newest known plan label per account scope, for the series headers. */
+  scopeLabels: Record<string, string>;
 }
 
 const MIN_INTERVAL_MS = 60_000;
@@ -376,6 +382,8 @@ function logFrom(samples: readonly StoredSample[], rows: readonly StoredRow[]): 
       errKind: s.errKind,
       errText: s.errText,
       planLabel: s.planLabel,
+      errScopes: s.errScopes,
+      planLabels: s.planLabels,
       partial: s.partial,
       stale: s.stale,
       rows: bySample.get(s.id) ?? [],
@@ -397,13 +405,22 @@ export function buildProviderHistory(opts: HistoryOptions): ProviderHistory {
     to,
   });
   const samples = logLimit > 0 ? samplesInRange({ provider, from, to }) : [];
+  const log = logFrom(samples, points).slice(0, logLimit);
+  // Walk newest-first so a scope's label is the one currently in effect.
+  const scopeLabels: Record<string, string> = {};
+  for (const entry of log) {
+    for (const { key, label } of entry.planLabels) {
+      if (!scopeLabels[key]) scopeLabels[key] = label;
+    }
+  }
   return {
     provider,
     from,
     to,
     series,
-    log: logFrom(samples, points).slice(0, logLimit),
+    log,
     samples: samples.length,
+    scopeLabels,
   };
 }
 

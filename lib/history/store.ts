@@ -56,8 +56,9 @@ export function record(input: SampleInput, ts: number = Date.now()): Recorded {
     const tx = db.transaction(() => {
       const info = db
         .prepare(
-          `INSERT INTO sample (ts, provider, source, ok, err_kind, err_text, plan_label, partial, stale)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO sample (ts, provider, source, ok, err_kind, err_text, plan_label,
+                               err_scopes, plan_labels, partial, stale)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           ts,
@@ -67,6 +68,8 @@ export function record(input: SampleInput, ts: number = Date.now()): Recorded {
           input.errKind ?? null,
           input.errText ?? null,
           input.planLabel ?? null,
+          input.errScopes?.length ? JSON.stringify(input.errScopes) : null,
+          input.planLabels?.length ? JSON.stringify(input.planLabels) : null,
           input.partial ? 1 : 0,
           input.stale ? 1 : 0,
         );
@@ -91,7 +94,19 @@ export function record(input: SampleInput, ts: number = Date.now()): Recorded {
   }
 }
 
-const SAMPLE_COLS = `id, ts, provider, source, ok, err_kind, err_text, plan_label, partial, stale`;
+const SAMPLE_COLS = `id, ts, provider, source, ok, err_kind, err_text, plan_label,
+                     err_scopes, plan_labels, partial, stale`;
+
+/** Both new columns are JSON written by us; a corrupt cell reads as empty. */
+function parseJsonArray<T>(v: unknown): T[] {
+  if (typeof v !== 'string' || !v) return [];
+  try {
+    const parsed = JSON.parse(v);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 function mapSample(row: Record<string, unknown>): StoredSample {
   return {
@@ -103,6 +118,8 @@ function mapSample(row: Record<string, unknown>): StoredSample {
     errKind: (row.err_kind as string) ?? null,
     errText: (row.err_text as string) ?? null,
     planLabel: (row.plan_label as string) ?? null,
+    errScopes: parseJsonArray<string>(row.err_scopes),
+    planLabels: parseJsonArray<{ key: string; label: string }>(row.plan_labels),
     partial: Number(row.partial) === 1,
     stale: Number(row.stale) === 1,
   };
@@ -264,6 +281,8 @@ export interface CsvRow {
   ok: boolean;
   errKind: string | null;
   planLabel: string | null;
+  errScopes: string[];
+  planLabels: { key: string; label: string }[];
   partial: boolean;
   stale: boolean;
 }
@@ -282,7 +301,8 @@ export function csvRowsInRange(
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT s.ts, s.source, s.ok, s.err_kind, s.plan_label, s.partial, s.stale,
+      `SELECT s.ts, s.source, s.ok, s.err_kind, s.plan_label, s.err_scopes, s.plan_labels,
+              s.partial, s.stale,
               r.scope, r.kind, r.label, r.percent, r.used, r.total, r.unit, r.reset_at
        FROM sample s JOIN sample_row r ON r.sample_id = s.id
        WHERE s.provider = ? AND s.ts >= ? AND s.ts <= ?
@@ -303,6 +323,8 @@ export function csvRowsInRange(
     ok: Number(r.ok) === 1,
     errKind: (r.err_kind as string) ?? null,
     planLabel: (r.plan_label as string) ?? null,
+    errScopes: parseJsonArray<string>(r.err_scopes),
+    planLabels: parseJsonArray<{ key: string; label: string }>(r.plan_labels),
     partial: Number(r.partial) === 1,
     stale: Number(r.stale) === 1,
   }));

@@ -15,6 +15,8 @@ interface HistoryResponse {
   series?: HistorySeries[];
   log?: HistoryLogEntry[];
   samples?: number;
+  /** Newest plan label per account scope. */
+  scopeLabels?: Record<string, string>;
   pollIntervalMs?: number;
 }
 
@@ -37,6 +39,12 @@ function fmtCompact(n: number): string {
   if (abs >= 1e6) return `${Math.round(n / 1e5) / 10}M`;
   if (abs >= 1e3) return `${Math.round(n / 100) / 10}K`;
   return String(Math.round(n * 100) / 100);
+}
+
+/** Per-account plans, compact: "1 Max · 2 Pro" (or the merged label alone). */
+function planSummary(e: HistoryLogEntry): string {
+  if (e.planLabels.length === 0) return '';
+  return e.planLabels.map((p) => `${p.key} ${p.label}`).join(' · ');
 }
 
 function fmtStamp(t: number): string {
@@ -225,7 +233,12 @@ export default function HistoryPage() {
               <div className="card-head">
                 <span className="head-left">
                   <span className="label">{s.label}</span>
-                  {s.scope !== 'merged' && <span className="tag">account {s.scope}</span>}
+                  {s.scope !== 'merged' && (
+                    <span className="tag">
+                      account {s.scope}
+                      {data?.scopeLabels?.[s.scope] ? ` · ${data.scopeLabels[s.scope]}` : ''}
+                    </span>
+                  )}
                   {s.estimated && <span className="tag">est</span>}
                 </span>
                 <span className="head-right">
@@ -312,9 +325,13 @@ export default function HistoryPage() {
                           ? 'not configured'
                           : e.stale
                             ? 'cached (live fetch failed)'
-                            : e.partial
-                              ? 'partial — some accounts failed'
-                              : e.planLabel ?? ''}
+                            : e.errScopes.length
+                              ? // Name the accounts: a merged card that lost a
+                                // member looks like a usage drop otherwise.
+                                `account ${e.errScopes.join(', ')} failed — excluded from the merge`
+                              : e.partial
+                                ? 'partial — an account failed'
+                                : e.planLabel || planSummary(e)}
                     </td>
                   </tr>
                 ))}

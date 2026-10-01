@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { closeDb, getDb } from './db';
-import { record, fetchAll, pointsInRange, prune, samplesInRange, sampleCount } from './store';
+import { record, fetchAll, pointsInRange, prune, samplesInRange, sampleCount, csvRowsInRange } from './store';
 import { extractSample } from './extract';
 import { buildProviderHistory, buildSeries } from './series';
 import type { ProviderResult, UsageLimit } from '../providers/types';
@@ -350,15 +350,29 @@ describe('schema guard', () => {
     expect(fs.existsSync(path.join(dir, 'quota-peek.db'))).toBe(true);
   });
 
-  it('refuses to reuse a db whose columns are not the ones we read', () => {
+  it('migrates an older database forward instead of refusing it', () => {
     getDb();
     closeDb();
-    // Simulate an older/foreign build: drop a column the code selects.
+    // A file written by the previous build: same tables, fewer columns.
     const raw = new (require('better-sqlite3'))(path.join(dir, 'quota-peek.db'));
     raw.exec('ALTER TABLE sample DROP COLUMN stale');
+    raw.exec('ALTER TABLE sample DROP COLUMN err_scopes');
     raw.close();
-    expect(() => getDb()).toThrow(/does not match the expected schema/);
-    closeDb();
+
+    expect(() => getDb()).not.toThrow();
+    const cols = (getDb().prepare('PRAGMA table_info(sample)').all() as { name: string }[]).map(
+      (c) => c.name,
+    );
+    expect(cols).toEqual(expect.arrayContaining(['stale', 'err_scopes', 'plan_labels']));
+    // And the restored database still works end to end.
+    expect(() =>
+      samplesInRange({ provider: 'claude', from: 0, to: Date.now() }),
+    ).not.toThrow();
+  });
+
+  it('still refuses a file that is not a database at all', () => {
+    fs.writeFileSync(path.join(dir, 'quota-peek.db'), 'this is not sqlite');
+    expect(() => getDb()).toThrow();
   });
 
   it('accepts a database created outside the app (no marker file)', () => {
@@ -570,5 +584,118 @@ describe('a drop no window reset explains', () => {
       now: T0 + 300_000,
     });
     expect(s[0].delta).toEqual({ kind: 'reset', at: T0 });
+  });
+});
+
+describe('per-account provenance on a sample', () => {
+  const T0 = 1_700_000_000_000;
+
+  it('records which accounts failed and each account\'s plan label', () => {
+    const s = extractSample(
+      result({
+        provider: 'kimi',
+        summary: {
+          planLabel: 'Allegro + Allegro',
+          limits: [lim({ kind: 'weekly', percent: 15 })],
+          partial: true,
+          accounts: [
+            { key: '1', ok: true, planLabel: 'Allegro', limits: [lim({ kind: 'weekly', percent: 16 })] },
+            { key: '2', ok: true, planLabel: 'Allegretto', limits: [lim({ kind: 'weekly', percent: 13 })] },
+            { key: '3', ok: false, error: 'HTTP 401', limits: [] },
+          ],
+        },
+      }),
+      'poll',
+      T0,
+    );
+    // The failing key is what makes the merged drop explicable a week later.
+    expect(s.errScopes).toEqual(['3']);
+    expect(s.planLabels).toEqual([
+      { key: '1', label: 'Allegro' },
+      { key: '2', label: 'Allegretto' },
+    ]);
+    expect(s.partial).toBe(true);
+
+    record(s, T0);
+    const [stored] = samplesInRange({ provider: 'kimi', from: T0 - 1, to: T0 + 1 });
+    expect(stored.errScopes).toEqual(['3']);
+    expect(stored.planLabels).toEqual([
+      { key: '1', label: 'Allegro' },
+      { key: '2', label: 'Allegretto' },
+    ]);
+  });
+
+  it('treats a failing account as partial even if the provider forgot to say so', () => {
+    const s = extractSample(
+      result({
+        provider: 'glm',
+        summary: {
+          limits: [lim({ kind: '5h', percent: 5 })],
+          accounts: [
+            { key: '1', ok: true, limits: [lim({ kind: '5h', percent: 5 })] },
+            { key: '2', ok: false, error: 'HTTP 429', limits: [] },
+          ],
+        },
+      }),
+      'poll',
+    );
+    expect(s.errScopes).toEqual(['2']);
+    expect(s.partial).toBe(true);
+  });
+
+  it('survives a corrupt cell instead of failing the read', () => {
+    const T = Date.now();
+    record(extractSample(result(), 'poll', T), T);
+    getDb().prepare("UPDATE sample SET err_scopes = '{not json'").run();
+    const [stored] = samplesInRange({ provider: 'claude', from: T - 1, to: T + 1 });
+    expect(stored.errScopes).toEqual([]);
+  });
+
+  it('feeds the refresh log and the scope labels', () => {
+    const T = Date.now();
+    record(
+      extractSample(
+        result({
+          provider: 'kimi',
+          summary: {
+            limits: [lim({ kind: 'weekly', percent: 15 })],
+            accounts: [
+              { key: '1', ok: true, planLabel: 'Allegro', limits: [lim({ kind: 'weekly', percent: 16 })] },
+              { key: '2', ok: false, error: 'HTTP 401', limits: [] },
+            ],
+          },
+        }),
+        'poll',
+        T,
+      ),
+      T,
+    );
+    const h = buildProviderHistory({ provider: 'kimi', from: T - 1000, to: T + 1000, now: T });
+    expect(h.log[0].errScopes).toEqual(['2']);
+    expect(h.scopeLabels).toEqual({ '1': 'Allegro' });
+  });
+
+  it('exports both as CSV columns', () => {
+    const T = Date.now();
+    record(
+      extractSample(
+        result({
+          provider: 'kimi',
+          summary: {
+            limits: [lim({ kind: 'weekly', percent: 15 })],
+            accounts: [
+              { key: '1', ok: true, planLabel: 'Allegro', limits: [lim({ kind: 'weekly', percent: 16 })] },
+              { key: '2', ok: false, error: 'HTTP 401', limits: [] },
+            ],
+          },
+        }),
+        'poll',
+        T,
+      ),
+      T,
+    );
+    const rows = csvRowsInRange('kimi', T - 1000, T + 1000);
+    expect(rows[0].errScopes).toEqual(['2']);
+    expect(rows[0].planLabels).toEqual([{ key: '1', label: 'Allegro' }]);
   });
 });

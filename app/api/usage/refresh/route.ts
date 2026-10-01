@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { ensurePoller, isPolling, lastPoll, pollIfIdle, POLL_ENABLED } from '@/lib/history/poller';
+import { currentLease, ensurePoller, isPolling, lastPoll, pollIfIdle, POLL_ENABLED } from '@/lib/history/poller';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -22,6 +22,17 @@ export async function POST() {
     return NextResponse.json({ ok: true, enabled: false });
   }
   const ran = await pollIfIdle();
+  if (ran?.skipped === 'lease_held_elsewhere') {
+    // Another replica owns sampling; refreshing here would double the calls.
+    return NextResponse.json({
+      ok: true,
+      enabled: true,
+      ran: false,
+      skipped: ran.skipped,
+      reason: 'another instance is sampling — its round is the fresh one',
+      lease: currentLease(),
+    });
+  }
   if (ran) {
     // Same line the timer's rounds print, so "why did that take 4s?" is
     // answerable from `docker logs` alone.

@@ -22,6 +22,8 @@ const COLUMNS = [
   'sample_ok',
   'err_kind',
   'plan_label',
+  'err_scopes',
+  'plan_labels',
   'partial',
   'stale',
 ] as const;
@@ -72,6 +74,8 @@ export async function GET(
         r.ok ? 1 : 0,
         r.errKind,
         r.planLabel,
+        r.errScopes.length ? JSON.stringify(r.errScopes) : '',
+        r.planLabels.length ? JSON.stringify(r.planLabels) : '',
         r.partial ? 1 : 0,
         r.stale ? 1 : 0,
       ]

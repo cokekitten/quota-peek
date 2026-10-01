@@ -174,6 +174,8 @@ See [`.env.example`](.env.example) for the full list. The only one you must set 
 | `QP_DATA_DIR` | `./data` | Where `quota-peek.db` lives. Docker: `/app/data`, mounted as a volume. |
 | `QP_HISTORY_DAYS` | `90` | Raw sample retention; older samples are pruned each round. |
 | `QP_CACHE_TTL_MS` | `60000` | Reuse window so a poll and a page load don't double-hit a provider. |
+| `QP_POLL_OWNER` | `hostname:pid` | Identity used for the sampling lease (set it to see who holds it). |
+| `QP_POLL_LEASE_MS` | `max(10 min, 2 × interval)` | How long a sampling lease is held; the holder renews, others idle. |
 | `QP_SELF_URL` | `http://127.0.0.1:$PORT` | Where the boot hook hands off to the poller (set it if the port is mapped). |
 
 ### Multiple accounts (key-based providers)
@@ -273,7 +275,8 @@ with "no data".
 - **Kimi** access tokens expire after ~15 min and are refreshed the same way. In Docker, prefer `KIMI_API_KEY` since the mounted credentials file is read-only.
 - **GLM** window labels are derived from each limit's actual `nextResetTime`, so they stay correct even as the opaque `unit` codes shift.
 - The **GLM** key in your `.env` is read at request time — restart the server after changing it.
-- **The sampler assumes one server process.** Running multiple replicas would poll and record N times; give each its own `QP_DATA_DIR` or run one replica with polling on.
+- **The sampler takes a lease** (`poll_lease` row in the same database), so running several replicas against one `QP_DATA_DIR` still results in exactly one round of upstream calls: the holder polls and renews, the others idle until the lease expires — which is what happens if the holder dies. `GET /api/poll` reports the current holder. A refresh aimed at a non-holder is refused rather than duplicated.
+- **The history database is stateful and additive.** A schema change adds columns to the existing file in place (logged as `history db migrated: added …`); the timeline is never discarded. A file that is not a SQLite database is refused.
 
 ## 🤝 Contributing
 

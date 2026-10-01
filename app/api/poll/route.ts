@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { POLL_ENABLED, isPolling, lastPoll, pollIfIdle, startPoller, type PollSummary } from '@/lib/history/poller';
+import { POLL_ENABLED, currentLease, isPolling, lastPoll, leaseTtlMs, pollIfIdle, startPoller, type PollSummary } from '@/lib/history/poller';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -11,6 +11,7 @@ function summary(s: PollSummary | null) {
     at: s.at,
     tookMs: s.tookMs,
     pruned: s.pruned,
+    ...(s.skipped ? { skipped: s.skipped } : {}),
     providers: s.providers.map((p) => ({
       provider: p.provider,
       ok: p.ok,
@@ -38,7 +39,14 @@ export async function GET() {
     return NextResponse.json({ ok: true, enabled: false });
   }
   startPoller();
-  return NextResponse.json({ ok: true, enabled: true, polling: isPolling(), last: summary(lastPoll()) });
+  return NextResponse.json({
+    ok: true,
+    enabled: true,
+    polling: isPolling(),
+    lease: currentLease(),
+    leaseTtlMs: leaseTtlMs(),
+    last: summary(lastPoll()),
+  });
 }
 
 export async function POST(request: Request) {
@@ -50,7 +58,9 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     enabled: true,
-    ran: !!ran,
+    ran: !!ran && !ran?.skipped,
+    ...(ran?.skipped ? { skipped: ran.skipped } : {}),
+    lease: currentLease(),
     last: summary(ran ?? lastPoll()),
   });
 }

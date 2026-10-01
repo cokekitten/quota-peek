@@ -58,11 +58,20 @@ function collectRows(result: ProviderResult): SampleRowInput[] {
   return rows;
 }
 
+export interface AccountPlanLabel {
+  key: string;
+  label: string;
+}
+
 export interface ExtractedSample extends SampleInput {
   /** Sample timestamp (epoch ms) — pass it to record() to keep them aligned. */
   ts: number;
   rows: SampleRowInput[];
   errKind: ErrKind | null;
+  /** Account keys that failed inside an otherwise-successful read. */
+  errScopes: string[];
+  /** Per-account plan labels, for cards that merge several memberships. */
+  planLabels: AccountPlanLabel[];
   /** True when at least one row carries a per-window percentage. */
   hasPercent: boolean;
   /** True when at least one row carries an absolute used/total pair. */
@@ -83,6 +92,13 @@ export function extractSample(
       ? 'not_configured'
       : 'error'
     : null;
+  // A merged card that silently lost a member looks like a usage drop on the
+  // timeline, so the failed keys are recorded with the sample itself.
+  const accounts = result.summary?.accounts ?? [];
+  const errScopes = errKind ? [] : accounts.filter((a) => !a.ok).map((a) => a.key);
+  const planLabels = accounts
+    .filter((a) => a.ok && a.planLabel)
+    .map((a) => ({ key: a.key, label: a.planLabel as string }));
   return {
     provider: result.provider,
     source,
@@ -91,9 +107,11 @@ export function extractSample(
     errKind,
     errText: result.error ? result.error.slice(0, MAX_ERR_CHARS) : null,
     planLabel: result.summary?.planLabel ?? null,
-    partial: !!result.summary?.partial,
+    partial: !!result.summary?.partial || errScopes.length > 0,
     stale: !!result.stale,
     rows,
+    errScopes,
+    planLabels,
     hasPercent: rows.some((r) => r.percent !== null),
     hasAbsolute: rows.some((r) => r.used !== null || r.total !== null),
     kinds: [...new Set(rows.map((r) => r.kind))],
