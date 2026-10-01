@@ -20,3 +20,6 @@ stepfun-session/
 .mimo-session.json
 mimo-session/
 .env.bak*
+
+# Usage-history database (local state: samples, WAL, schema) — never commit
+data/

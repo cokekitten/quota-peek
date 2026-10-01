@@ -25,6 +25,9 @@ npm-debug.log*
 Dockerfile
 .dockerignore
 
+# Local usage-history database (mounted at runtime, never baked in)
+data
+
 # Docs / local artifacts
 docs
 README.md
