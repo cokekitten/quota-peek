@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -97,5 +98,34 @@ describe('pollOnce respects the lease', () => {
     });
     expect(summary.skipped).toBeUndefined();
     expect(sampleCount()).toBe(1);
+  });
+});
+
+describe('a long-lived connection sees another replica', () => {
+  it('does not keep reading its own snapshot of the lease table', () => {
+    // This is the case a long-running server hits: it wrote its own lease at
+    // boot, did a few rounds of work, and then another process claims the
+    // lease. If the connection holds a stale read snapshot it keeps believing
+    // it is still the owner and keeps sampling — the exact duplication the
+    // lease exists to prevent.
+    const dbFile = path.join(dir, 'quota-peek.db');
+    acquireLease('self:1', 600_000, Date.now());
+    expect(leaseState()?.owner).toBe('self:1');
+
+    // Another replica takes the lease, with raw SQL from another process.
+    execFileSync(
+      process.execPath,
+      [
+        '-e',
+        `const D=require(${JSON.stringify(require.resolve('better-sqlite3'))});
+         const db=new D(${JSON.stringify(dbFile)}); db.pragma('busy_timeout=5000');
+         db.prepare('INSERT OR REPLACE INTO poll_lease (id,owner,expires_at,updated_at) VALUES (1,?,?,?)')
+           .run('foreign:9', Date.now()+600000, Date.now()); db.close();`,
+      ],
+      { stdio: 'ignore' },
+    );
+
+    expect(leaseState()?.owner).toBe('foreign:9');
+    expect(acquireLease('self:1')).toBe(false);
   });
 });

@@ -276,6 +276,7 @@ with "no data".
 - **GLM** window labels are derived from each limit's actual `nextResetTime`, so they stay correct even as the opaque `unit` codes shift.
 - The **GLM** key in your `.env` is read at request time — restart the server after changing it.
 - **The sampler takes a lease** (`poll_lease` row in the same database), so running several replicas against one `QP_DATA_DIR` still results in exactly one round of upstream calls: the holder polls and renews, the others idle until the lease expires — which is what happens if the holder dies. `GET /api/poll` reports the current holder. A refresh aimed at a non-holder is refused rather than duplicated.
+- **The lease needs a real filesystem.** SQLite's WAL mode coordinates processes through a shared-memory (`-shm`) mapping, which a bind mount on macOS (Docker Desktop / OrbStack) does not make coherent across the boundary: a long-running container can keep reading its own snapshot of the lease table and miss another replica's claim. Harmless with one container, but if you ever scale out, put `QP_DATA_DIR` on a Docker **named volume** (a real local filesystem) rather than a host bind mount — otherwise the lease degrades to advisory.
 - **The history database is stateful and additive.** A schema change adds columns to the existing file in place (logged as `history db migrated: added …`); the timeline is never discarded. A file that is not a SQLite database is refused.
 
 ## 🤝 Contributing
