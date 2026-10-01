@@ -75,15 +75,21 @@ export async function pollOnce(opts: PollOptions = {}): Promise<PollSummary> {
   for (const provider of keys) {
     const t0 = Date.now();
     try {
-      const result: ProviderResult = await fetchUsage(provider);
-      const sample = extractSample(result, 'poll', Date.now());
-      const stored = record(sample, sample.ts);
+      // `fresh` — the sampler always reads the provider for real, but it still
+      // primes (and joins) the shared caches so a page load landing right
+      // after a round reuses that value instead of calling upstream again.
+      const live = await liveUsage(provider, fetchUsage, undefined, { fresh: true });
+      const result: ProviderResult = live.result;
+      const sample = extractSample(result, 'poll', live.at);
+      // Only the caller that actually fetched writes history — a reused
+      // reading is already in the timeline.
+      const stored = live.source === 'fetch' ? record(sample, sample.ts) : null;
       providers.push({
         provider,
         ok: result.ok,
         errKind: sample.errKind,
         rows: sample.rows.length,
-        ...(stored.skipped ? { skipped: 'store' as const, storeError: stored.skipped } : {}),
+        ...(stored?.skipped ? { skipped: 'store' as const, storeError: stored.skipped } : {}),
         ms: Date.now() - t0,
       });
     } catch {

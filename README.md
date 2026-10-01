@@ -9,7 +9,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/node-%3E%3D18.18-green)](https://nodejs.org/)
 
-Quota Peek aggregates live usage/quota from major AI coding/subscription plans into one clean, dark dashboard. Cards are always queried live; a small background sampler also records every reading to a local SQLite file, so each card grows a real trend line and [/history](#-usage-history) can show what any poll or refresh actually saw.
+Quota Peek aggregates live usage/quota from major AI coding/subscription plans into one clean, dark dashboard. A small background sampler reads every provider on a fixed interval and records each reading to a local SQLite file, so the cards answer from the sampler's last reading (no second round of upstream calls) and [/history](#-usage-history) can show what any poll or refresh actually saw. **Refresh** runs one sampling round now.
 
 ## ✨ Features
 
@@ -18,6 +18,7 @@ Quota Peek aggregates live usage/quota from major AI coding/subscription plans i
 - **Normalized metrics** — providers show their real windows (**5h Window** and/or **Weekly**, depending on what the plan actually has), with precise countdowns like `Resets in 4 hr 36 min` or `Resets in 1 d 6 hr`.
 - **Smart refresh** — manual refresh, optional auto-refresh (10 min), and automatic refresh when you refocus the tab after 3+ minutes.
 - **Usage history** — a background sampler (5 min, no cron) records every provider reading to a local SQLite file: percentage, absolute figures, each account separately, and failures. Cards stay a glanceable snapshot with a change badge (`+2.5%`, `-¥0.31`, `↻ reset` when a window rolled over) — a trend line under every bar reads as a stray rule, so the curves live on `/history`: any window over 24 h / 7 d / 30 d, next to a log of what each read saw. CSV export included.
+- **No double fetching** — the page reads the sampler's last reading instead of calling every provider again, so opening the dashboard can't be the reason a rate-limited card goes offline. A reading younger than one interval is served as-is, one to two intervals old is served with a `cached` tag, and beyond that the app goes upstream for real. A served reading is not written to history twice; the sampler already recorded it.
 - **Resilient** — a provider that errors out degrades to an offline card; it never breaks the others. Claude's results are cached briefly and served stale on failure.
 - **No dead cards** — a provider with no key / no credential file is hidden instead of occupying a slot; the `No key ×N` pill in the header reveals them (each one names the variable to set) and the choice is remembered in `localStorage`. A provider that **is** configured but failing — expired token, 429, network down — never hides, because that's the signal you opened the dashboard for.
 - **Zero infrastructure** — a single Next.js app plus one SQLite file. Run it, open it, done; history is just a file you can delete or back up.
@@ -183,6 +184,7 @@ GLM, MiniMax, Kimi, Volcengine, StepFun, DeepSeek, MiMo and OpenRouter support m
 
 ```
 GET /api/usage/[provider]      ← single dynamic route: claude | codex | glm | supergrok | minimax | kimi | volcengine | stepfun | deepseek | mimo | openrouter
+POST /api/usage/refresh       ← run one sampling round now (what the Refresh button calls)
 GET /api/history               ← short window behind the card change badges (all providers, one request)
 GET /api/history/[provider]    ← one channel: chart series + refresh log
 GET /api/history/[provider]/export   ← the same rows as CSV
@@ -224,7 +226,8 @@ lib/history/
   extract.ts                      # ProviderResult → sample + rows (schema-agnostic)
   store.ts                        # append / range queries / prune / CSV rows
   series.ts                       # bucketing, deltas, rollover + gap detection
-  liveCache.ts                    # 60s result reuse shared by the poller and page loads
+  liveCache.ts                    # 60s dedupe (successes only) + the sampler's latest reading
+  serve.ts                        # what a page request answers with: cache while fresh, else fetch
   poller.ts                       # the background sampler (one timer, one process)
   *.test.ts                       # the store is tested against a real temporary database
 lib/providers/

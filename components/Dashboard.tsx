@@ -31,6 +31,8 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
   const [configured, setConfigured] = useState<ConfiguredMap>(initialConfigured);
   const [showUnconfigured, setShowUnconfigured] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(() => new Date());
+  /** True while a manual refresh round is in flight (POST /api/usage/refresh). */
+  const [refreshing, setRefreshing] = useState(false);
   // Per-provider readings behind the change badge, fetched once for every
   // card. Best-effort: a failure leaves the cards exactly as they are.
   const [history, setHistory] = useState<Record<string, HistorySeries[]>>({});
@@ -115,11 +117,21 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
     void loadHistory();
   }, [loadHistory, refreshKey]);
 
-  const refresh = useCallback(() => {
+  // A manual refresh runs one sampling round server-side, then the cards read
+  // it. Re-fetching the cards alone would just re-serve the same readings —
+  // they answer from the sampler's last round.
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetch('/api/usage/refresh', { method: 'POST' });
+    } catch {
+      /* the round may not have completed; the cards still render */
+    }
     setRefreshKey((k) => k + 1);
     lastRefreshAt.current = Date.now();
     setUpdatedAt(new Date());
     probeConfigured();
+    setRefreshing(false);
   }, [probeConfigured]);
 
   useEffect(() => {
@@ -205,8 +217,8 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
             <span className="dot" />
             Auto 10m
           </button>
-          <button className="refresh" onClick={refresh}>
-            Refresh
+          <button className="refresh" onClick={() => void refresh()} disabled={refreshing}>
+            {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
           <a
             className="pill history-link"

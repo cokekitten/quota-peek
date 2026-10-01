@@ -159,7 +159,16 @@ describe('liveCache', () => {
     const first = await liveUsage('claude', fetchUsage);
     const second = await liveUsage('claude', fetchUsage);
     expect(fetchUsage).toHaveBeenCalledTimes(1);
-    expect(second).toBe(first);
+    expect(second.result).toBe(first.result);
+    expect(second.source).toBe('cache');
+  });
+
+  it('lets the sampler force a real read even inside the reuse window', async () => {
+    const fetchUsage = vi.fn(async (p: ProviderKey) => okResult(p));
+    await liveUsage('claude', fetchUsage);
+    const forced = await liveUsage('claude', fetchUsage, Date.now(), { fresh: true });
+    expect(fetchUsage).toHaveBeenCalledTimes(2);
+    expect(forced.source).toBe('fetch');
   });
 
   it('expires after the TTL (default 60s)', () => {
