@@ -75,8 +75,9 @@ docker run -d --name quota-peek -p 5928:5928 \
 ```
 
 Add `-v "$PWD/data:/app/data"` to keep the usage history across container
-recreates (create it first with `mkdir -p data && chown 1000:1000 data` — the
-container runs as uid 1000). Add `-e QP_POLL=0` to turn the background sampler
+recreates. Create it first — the container runs as uid 1000, so on macOS
+bind mounts it must be world-writable (`mkdir -p data && chmod 777 data`; on
+Linux use `chown 1000:1000 data`). Add `-e QP_POLL=0` to turn the background sampler
 off.
 
 → open **http://localhost:5928**
