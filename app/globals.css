@@ -459,19 +459,19 @@ main {
   color: var(--muted);
 }
 /* More usage than last reading = the direction worth noticing. */
-.metric .k .v .delta.over {
+.metric .k .v .delta.warn {
+  color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+}
+.metric .k .v .delta.crit {
   color: var(--red);
   background: color-mix(in srgb, var(--red) 12%, transparent);
 }
-.metric .k .v .delta.under {
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 12%, transparent);
+:root[data-theme='c'] .metric .k .v .delta.warn {
+  color: #fbbf24;
 }
-:root[data-theme='c'] .metric .k .v .delta.over {
+:root[data-theme='c'] .metric .k .v .delta.crit {
   color: #f87171;
-}
-:root[data-theme='c'] .metric .k .v .delta.under {
-  color: #34d399;
 }
 
 /* Header link to the history page. */
@@ -664,13 +664,13 @@ main.history {
   background: color-mix(in srgb, var(--muted) 10%, transparent);
   color: var(--muted);
 }
-.card-head .delta.over {
+.card-head .delta.warn {
+  color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+}
+.card-head .delta.crit {
   color: var(--red);
   background: color-mix(in srgb, var(--red) 12%, transparent);
-}
-.card-head .delta.under {
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 12%, transparent);
 }
 .card.series .meta {
   margin-top: 8px;

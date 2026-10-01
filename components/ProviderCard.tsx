@@ -226,7 +226,10 @@ export function Metric({
   /** Recorded readings for this exact row (scope + kind), if the store has any. */
   series?: HistorySeries;
 }) {
-  const badge = deltaBadge(series?.delta);
+  // Grade a money delta against the row's own current figure; a percentage
+  // delta is already in the same unit as the number beside it.
+  const current = limit?.kind === 'balance' ? limit.used : limit?.percent;
+  const badge = deltaBadge(series?.delta, undefined, current);
   // Money rows (Balance) are an amount, not a window: state the figure once,
   // with no bar, percent or pace — a progress bar over a money pool means
   // nothing. A window rollover (e.g. OpenRouter's Month Spend) still shows
@@ -376,10 +379,36 @@ function paceFromExpected(
  * A window rollover returns no delta at all (a reset is not a drop), so the
  * badge says so instead of inventing a -98%.
  */
+/**
+ * Magnitude bands for the change badge.
+ *
+ * Colouring by *direction* (anything up = red) turned a normal 5-minute poll
+ * into a wall of red: at this sampling interval almost every reading moves by
+ * ±1pp. Worse, the pace badge right next to it already uses red/amber/green
+ * for a different question (speed vs elapsed time), so two adjacent pills in
+ * the same three colours meant two different things.
+ *
+ * So the badge is graded by magnitude — it is a signal, not decoration — and
+ * the pace badge keeps the colours.
+ */
+const PP_NEUTRAL = 2;
+const PP_WARN = 10;
+/** Money rows have no fixed scale, so grade them relative to the row itself. */
+const MONEY_NEUTRAL_RATIO = 0.01;
+const MONEY_WARN_RATIO = 0.05;
+
+function magnitude(mag: number, warn: number, crit: number): 'even' | 'warn' | 'crit' {
+  if (mag >= crit) return 'crit';
+  if (mag >= warn) return 'warn';
+  return 'even';
+}
+
 export function deltaBadge(
   delta: HistoryDelta | null | undefined,
   now: number = Date.now(),
-): { text: string; cls: 'over' | 'under' | 'even'; title: string } | null {
+  /** Current value of the row, so a money delta can be judged relatively. */
+  current?: number | null,
+): { text: string; cls: 'even' | 'warn' | 'crit'; title: string } | null {
   if (!delta) return null;
   if (delta.kind === 'reset') {
     return { text: '↻ reset', cls: 'even', title: 'Window rolled over — usage since reset, no change to compare' };
@@ -388,20 +417,31 @@ export function deltaBadge(
   const v = delta.value;
   const sign = v > 0 ? '+' : v < 0 ? '-' : '';
   const mag = Math.abs(v);
-  const cls = v > 0.05 ? 'over' : v < -0.05 ? 'under' : 'even';
   if (delta.kind === 'pp') {
     const one = Math.round(mag * 10) / 10;
     return {
       text: mag < 0.05 ? '±0%' : `${sign}${one.toFixed(1)}%`,
-      cls,
+      cls: magnitude(one, PP_NEUTRAL, PP_WARN),
       title: `${one.toFixed(1)} percentage points ${when}`,
     };
   }
   const amount = fmtAbs(mag, delta.unit ?? undefined);
+  // No row value to compare against (a balance we only see the delta of):
+  // fall back to the same absolute bands, in money units.
+  const base = current && current > 0 ? Math.abs(current) : null;
+  const cls = base
+    ? magnitude(mag / base, MONEY_NEUTRAL_RATIO, MONEY_WARN_RATIO)
+    : mag >= 100
+      ? 'crit'
+      : mag >= 10
+        ? 'warn'
+        : 'even';
   return {
     text: mag < 0.005 ? '±0' : `${sign}${amount}`,
     cls,
-    title: `${amount} ${when}`,
+    title: base
+      ? `${amount} ${when} (${((mag / base) * 100).toFixed(2)}% of ${fmtAbs(base, delta.unit ?? undefined)})`
+      : `${amount} ${when}`,
   };
 }
 

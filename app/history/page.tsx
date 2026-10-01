@@ -219,7 +219,7 @@ export default function HistoryPage() {
         )}
 
         {series.map((s) => {
-          const badge = deltaBadge(s.delta);
+          const badge = deltaBadge(s.delta, undefined, s.last?.v ?? null);
           return (
             <section className="card series" key={s.key}>
               <div className="card-head">

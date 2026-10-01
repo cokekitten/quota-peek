@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { deltaBadge, Metric } from './ProviderCard';
-import type { HistorySeries } from '@/lib/history/series';
+import type { HistoryDelta, HistorySeries } from '@/lib/history/series';
 
 describe('Metric', () => {
   it('renders a money row as one bare amount — no bar, no percent', () => {
@@ -106,9 +106,21 @@ describe('deltaBadge', () => {
   it('shows a percentage-point change since the previous reading', () => {
     expect(deltaBadge({ kind: 'pp', value: 2.5, at: NOW - 5 * 60_000, gapMs: 5 * 60_000 }, NOW)).toEqual({
       text: '+2.5%',
-      cls: 'over',
+      // 2.5pp is a normal 5-minute move: neutral, not an alarm.
+      cls: 'warn',
       title: '2.5 percentage points since 5 min',
     });
+  });
+
+  it('grades by magnitude, not by direction', () => {
+    // The whole point: a +1pp tick on a 5-minute poll is routine and must not
+    // light up red (it used to), while a double-digit jump should.
+    const at = NOW - 5 * 60_000;
+    expect(deltaBadge({ kind: 'pp', value: 1, at, gapMs: 0 }, NOW)?.cls).toBe('even');
+    expect(deltaBadge({ kind: 'pp', value: -1, at, gapMs: 0 }, NOW)?.cls).toBe('even');
+    expect(deltaBadge({ kind: 'pp', value: 7.4, at, gapMs: 0 }, NOW)?.cls).toBe('warn');
+    expect(deltaBadge({ kind: 'pp', value: 12.8, at, gapMs: 0 }, NOW)?.cls).toBe('crit');
+    expect(deltaBadge({ kind: 'pp', value: -12.8, at, gapMs: 0 }, NOW)?.cls).toBe('crit');
   });
 
   it('rounds a tiny change to ±0 rather than noise', () => {
@@ -127,8 +139,18 @@ describe('deltaBadge', () => {
   it('formats money deltas with the row unit', () => {
     const b = deltaBadge({ kind: 'abs', value: -2.5, at: NOW - 3 * 3_600_000, gapMs: 3 * 3_600_000, unit: '¥' }, NOW);
     expect(b?.text).toBe('-¥2.5');
-    expect(b?.cls).toBe('under');
+    expect(b?.cls).toBe('even');
     expect(b?.title).toBe('¥2.5 since 3 h');
+  });
+
+  it('grades a money delta against the row it belongs to', () => {
+    // ¥2.5 is noise on a ¥1587 balance and a real event on a ¥20 one.
+    const d = (v: number): HistoryDelta => ({ kind: 'abs', value: v, at: NOW - 300_000, gapMs: 0, unit: '¥' });
+    expect(deltaBadge(d(-2.5), NOW, 1587)?.cls).toBe('even');
+    expect(deltaBadge(d(-2.5), NOW, 20)?.cls).toBe('crit');
+    expect(deltaBadge(d(-0.8), NOW, 20)?.cls).toBe('warn');
+    // The tooltip carries the relative size, since "¥2.5" alone says nothing.
+    expect(deltaBadge(d(-2.5), NOW, 1587)?.title).toContain('0.16% of ¥1587');
   });
 
   it('returns null when there is no history yet', () => {
