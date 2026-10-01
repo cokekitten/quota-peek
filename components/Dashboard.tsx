@@ -36,6 +36,9 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
   // Per-provider readings behind the change badge, fetched once for every
   // card. Best-effort: a failure leaves the cards exactly as they are.
   const [history, setHistory] = useState<Record<string, HistorySeries[]>>({});
+  // Newest recorded reading across all cards. The cards answer from the
+  // sampler's last round, so "when did I last look" is the wrong clock to show.
+  const [dataAt, setDataAt] = useState<number | null>(null);
   const autoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   // Timestamp of the last refresh trigger; used to decide whether a refocus
   // should fetch again (only if more than REFOCUS_THRESHOLD has passed).
@@ -104,10 +107,14 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
       // Unwrap {series: [...]} per provider and drop anything malformed — a
       // card with no history renders exactly as it did before.
       const next: Record<string, HistorySeries[]> = {};
+      let newest = 0;
       for (const [key, value] of Object.entries(json.providers)) {
-        if (Array.isArray(value?.series)) next[key] = value.series;
+        if (!Array.isArray(value?.series)) continue;
+        next[key] = value.series;
+        for (const row of value.series) newest = Math.max(newest, row.last?.at ?? 0);
       }
       setHistory(next);
+      if (newest) setDataAt(newest);
     } catch {
       /* the change badge is decoration; live usage is the point */
     }
@@ -193,7 +200,10 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
             <span className="dot" />
             {visible.length}
             {hidden ? `/${providers.length}` : ''} ·{' '}
-            {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {(dataAt ? new Date(dataAt) : updatedAt).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
           </span>
           {(hidden > 0 || showUnconfigured) && (
             <button

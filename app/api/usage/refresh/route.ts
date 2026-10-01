@@ -22,6 +22,15 @@ export async function POST() {
     return NextResponse.json({ ok: true, enabled: false });
   }
   const ran = await pollIfIdle();
+  if (ran) {
+    // Same line the timer's rounds print, so "why did that take 4s?" is
+    // answerable from `docker logs` alone.
+    const bad = ran.providers.filter((x) => !x.ok).map((x) => x.provider);
+    console.log(
+      `[quota-peek] manual round ${ran.providers.length} provider(s) in ${ran.tookMs}ms` +
+        (bad.length ? ` · failed: ${bad.join(', ')}` : ''),
+    );
+  }
   return NextResponse.json({
     ok: true,
     enabled: true,
