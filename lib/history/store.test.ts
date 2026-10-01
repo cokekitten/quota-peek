@@ -492,3 +492,83 @@ describe('retention and log window', () => {
     void reset;
   });
 });
+
+describe('a drop no window reset explains', () => {
+  const T0 = 1_700_000_000_000;
+  const row = (pct: number, resetAt: number | null) => ({
+    id: 0,
+    sampleId: 0,
+    ts: T0,
+    ok: true,
+    errKind: null,
+    scope: 'merged',
+    kind: '5h',
+    label: '5h Window',
+    percent: pct,
+    used: null,
+    total: null,
+    unit: null,
+    resetAt,
+    estimated: false,
+  });
+
+  it('flags a large drop when the reset clock did not move', () => {
+    const r = T0 + 4 * 3600e3;
+    const s = buildSeries({
+      provider: 'kimi',
+      points: [row(15, r), { ...row(10, r), ts: T0 + 300_000 }],
+      to: T0 + 300_000,
+      now: T0 + 300_000,
+    });
+    // The Σ membership changed (2 accounts → 3): -5pp is below the bar, so…
+    expect(s[0].delta).toMatchObject({ kind: 'pp', value: -5 });
+    expect((s[0].delta as { suspect?: string }).suspect).toBeUndefined();
+
+    // …but a -12pp drop with the same reset clock is flagged for the tooltip.
+    const big = buildSeries({
+      provider: 'kimi',
+      points: [row(40, r), { ...row(28, r), ts: T0 + 300_000 }],
+      to: T0 + 300_000,
+      now: T0 + 300_000,
+    });
+    expect(big[0].delta).toMatchObject({ kind: 'pp', value: -12, suspect: 'stable-reset' });
+  });
+
+  it('says so when the row carries no reset time to check against', () => {
+    const s = buildSeries({
+      provider: 'mystery',
+      points: [row(60, null), { ...row(30, null), ts: T0 + 300_000 }],
+      to: T0 + 300_000,
+      now: T0 + 300_000,
+    });
+    expect(s[0].delta).toMatchObject({ value: -30, suspect: 'no-reset-info' });
+  });
+
+  it('never flags a money row — a balance going down is its normal direction', () => {
+    const money = (used: number) => ({
+      ...row(0, null),
+      kind: 'balance',
+      label: 'Balance',
+      used,
+      unit: '¥',
+    });
+    const s = buildSeries({
+      provider: 'deepseek',
+      points: [money(1587), { ...money(1200), ts: T0 + 300_000 }],
+      to: T0 + 300_000,
+      now: T0 + 300_000,
+    });
+    expect(s[0].delta).toMatchObject({ kind: 'abs', value: -387 });
+    expect((s[0].delta as { suspect?: string }).suspect).toBeUndefined();
+  });
+
+  it('still calls a real rollover a reset, never a suspicious drop', () => {
+    const s = buildSeries({
+      provider: 'claude',
+      points: [row(98, T0 + 4 * 3600e3), { ...row(0, T0 + 9 * 3600e3), ts: T0 + 300_000 }],
+      to: T0 + 300_000,
+      now: T0 + 300_000,
+    });
+    expect(s[0].delta).toEqual({ kind: 'reset', at: T0 });
+  });
+});

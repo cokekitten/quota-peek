@@ -56,11 +56,29 @@ export interface HistoryPoint {
 
 export type HistoryDelta =
   /** Percentage points between the last two readings. */
-  | { kind: 'pp'; value: number; at: number; gapMs: number }
+  | { kind: 'pp'; value: number; at: number; gapMs: number; suspect?: Suspect }
   /** Absolute difference (money / counters) between the last two readings. */
   | { kind: 'abs'; value: number; at: number; gapMs: number; unit: string | null }
   /** The window rolled over: no delta, by design. */
   | { kind: 'reset'; at: number };
+
+/**
+ * A drop large enough to be worth explaining, flagged only when no window
+ * reset can account for it.
+ *
+ *  - `stable-reset` — the row's reset clock is present and unchanged, so the
+ *    window did *not* roll: the drop came from somewhere else (a multi-account
+ *    merge changing membership, an upstream revising its numbers).
+ *  - `no-reset-info` — the row reports no reset time at all, so a real reset
+ *    cannot be ruled out from the data we stored.
+ *
+ * Money rows are never flagged: a balance going down is its normal direction,
+ * not a mystery.
+ */
+export type Suspect = 'stable-reset' | 'no-reset-info';
+
+/** Percentage-point drop below which a percent row is just normal drift. */
+const SUSPECT_DROP_PP = 10;
 
 export interface HistorySeries {
   key: string;
@@ -248,7 +266,12 @@ function computeDelta(points: readonly StoredRow[], mode: SeriesMode): HistoryDe
   const cv = valueOf(cur, mode);
   const pv = valueOf(prev, mode);
   if (cv === null || pv === null) return null;
-  return { kind: 'pp', value: cv - pv, at: prev.ts, gapMs: gap };
+  const value = cv - pv;
+  let suspect: Suspect | undefined;
+  if (mode === 'percent' && value <= -SUSPECT_DROP_PP) {
+    suspect = cur.resetAt !== null && prev.resetAt !== null ? 'stable-reset' : 'no-reset-info';
+  }
+  return { kind: 'pp', value, at: prev.ts, gapMs: gap, ...(suspect ? { suspect } : {}) };
 }
 
 export interface BuildSeriesOptions {

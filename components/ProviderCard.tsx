@@ -422,7 +422,15 @@ export function deltaBadge(
     return {
       text: mag < 0.05 ? '±0%' : `${sign}${one.toFixed(1)}%`,
       cls: magnitude(one, PP_NEUTRAL, PP_WARN),
-      title: `${one.toFixed(1)} percentage points ${when}`,
+      // A big drop that no window reset explains is worth saying out loud:
+      // the reading changed for a reason the timeline does not carry.
+      title: `${one.toFixed(1)} percentage points ${when}${
+        delta.suspect === 'stable-reset'
+          ? ' · no window reset, so this is a quota-basis or upstream correction, not consumption'
+          : delta.suspect === 'no-reset-info'
+            ? ' · this row reports no reset time, so a window reset cannot be ruled out'
+            : ''
+      }`,
     };
   }
   const amount = fmtAbs(mag, delta.unit ?? undefined);

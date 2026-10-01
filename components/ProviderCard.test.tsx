@@ -229,3 +229,33 @@ describe('Metric with history', () => {
     expect(html).toContain('+12.0%');
   });
 });
+
+describe('a drop no window reset explains', () => {
+  const NOW = 1_800_000_000_000;
+
+  it('explains a large drop in the tooltip without changing its colour', () => {
+    const b = deltaBadge(
+      { kind: 'pp', value: -12, at: NOW - 300_000, gapMs: 0, suspect: 'stable-reset' },
+      NOW,
+    );
+    expect(b?.text).toBe('-12.0%');
+    expect(b?.title).toMatch(/no window reset/);
+    // Same magnitude band as a +12pp jump — the tooltip explains, colour doesn't.
+    expect(b?.cls).toBe(
+      deltaBadge({ kind: 'pp', value: 12, at: NOW - 300_000, gapMs: 0 }, NOW)?.cls,
+    );
+  });
+
+  it('says when a reset cannot be ruled out because the row has no reset time', () => {
+    const b = deltaBadge(
+      { kind: 'pp', value: -30, at: NOW - 300_000, gapMs: 0, suspect: 'no-reset-info' },
+      NOW,
+    );
+    expect(b?.title).toMatch(/cannot be ruled out/);
+  });
+
+  it('leaves ordinary drops unannotated', () => {
+    const b = deltaBadge({ kind: 'pp', value: -5, at: NOW - 300_000, gapMs: 0 }, NOW);
+    expect(b?.title).toBe('5.0 percentage points since 5 min');
+  });
+});
