@@ -637,17 +637,6 @@ code {
 .history-bar .seg.wide {
   flex-wrap: wrap;
 }
-.history-bar .toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-}
-.history-bar .toggle input {
-  accent-color: var(--accent);
-}
 .pill.csv {
   text-decoration: none;
   color: var(--muted);

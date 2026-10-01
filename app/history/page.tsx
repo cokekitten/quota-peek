@@ -52,7 +52,10 @@ function fmtStamp(t: number): string {
 export default function HistoryPage() {
   const [provider, setProvider] = useState<ProviderKey>('claude');
   const [range, setRange] = useState<RangeKey>('7d');
-  const [withAccounts, setWithAccounts] = useState(false);
+  // Which view the charts show: 'merged' (Σ) or one account key. Fetching
+  // always asks for every scope; the switch below is what the data says is
+  // there, so a multi-account card never hides its accounts behind a checkbox.
+  const [scope, setScope] = useState('merged');
   const [data, setData] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +64,7 @@ export default function HistoryPage() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/history/${provider}?range=${range}&scope=${withAccounts ? 'all' : 'merged'}`,
+        `/api/history/${provider}?range=${range}&scope=all`,
         { cache: 'no-store' },
       );
       const json = (await res.json()) as HistoryResponse;
@@ -76,7 +79,7 @@ export default function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [provider, range, withAccounts]);
+  }, [provider, range]);
 
   useEffect(() => {
     void load();
@@ -91,8 +94,25 @@ export default function HistoryPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  const series = data?.series ?? [];
+  const all = data?.series ?? [];
   const log = data?.log ?? [];
+  // Account keys this provider actually has, in numeric order.
+  const accountKeys = useMemo(
+    () =>
+      [...new Set(all.filter((s) => s.scope !== 'merged').map((s) => s.scope))].sort((a, b) =>
+        a.localeCompare(b, 'en', { numeric: true }),
+      ),
+    [all],
+  );
+  // A provider switch can leave the selection pointing at an account that
+  // doesn't exist there; fall back to the merged view.
+  useEffect(() => {
+    if (scope !== 'merged' && !accountKeys.includes(scope)) setScope('merged');
+  }, [accountKeys, scope]);
+  const series = useMemo(
+    () => (scope === 'merged' ? all.filter((s) => s.scope === 'merged') : all.filter((s) => s.scope === scope)),
+    [all, scope],
+  );
   const rangeMs = useMemo(() => RANGES.find((r) => r.key === range)?.ms ?? 7 * 864e5, [range]);
 
   // Adopt the URL once on mount, then keep it in sync — /history?provider=kimi
@@ -103,17 +123,17 @@ export default function HistoryPage() {
     const r = params.get('range') as RangeKey | null;
     if (p && PROVIDER_ORDER.includes(p)) setProvider(p);
     if (r && RANGES.some((x) => x.key === r)) setRange(r);
-    if (params.get('accounts') === '1') setWithAccounts(true);
+    const sc = params.get('scope');
+    if (sc) setScope(sc);
   }, []);
 
   useEffect(() => {
     const url = new URL(window.location.href);
     url.searchParams.set('provider', provider);
     url.searchParams.set('range', range);
-    if (withAccounts) url.searchParams.set('accounts', '1');
-    else url.searchParams.delete('accounts');
+    url.searchParams.set('scope', scope);
     window.history.replaceState(null, '', url.toString());
-  }, [provider, range, withAccounts]);
+  }, [provider, range, scope]);
 
   return (
     <>
@@ -159,10 +179,27 @@ export default function HistoryPage() {
             </button>
           ))}
         </div>
-        <label className="toggle" title="Also chart each configured account separately">
-          <input type="checkbox" checked={withAccounts} onChange={(e) => setWithAccounts(e.target.checked)} />
-          accounts
-        </label>
+        {accountKeys.length > 1 && (
+          <div className="seg" role="tablist" aria-label="Account">
+            <button
+              className={scope === 'merged' ? 'on' : ''}
+              onClick={() => setScope('merged')}
+              title="Merged across accounts"
+            >
+              Σ
+            </button>
+            {accountKeys.map((k) => (
+              <button
+                key={k}
+                className={scope === k ? 'on' : ''}
+                onClick={() => setScope(k)}
+                title={`Account ${k}`}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+        )}
         <a className="pill csv" href={`/api/history/${provider}/export?range=${range}`} download>
           <span className="dot" />
           CSV
@@ -174,7 +211,8 @@ export default function HistoryPage() {
         {!error && series.length === 0 && !loading && (
           <div className="empty">
             <p>
-              Nothing recorded for {PROVIDER_LABELS[provider]} in the last {range}. The background
+              Nothing recorded for {PROVIDER_LABELS[provider]}
+              {scope !== 'merged' ? ` · account ${scope}` : ''} in the last {range}. The background
               sampler writes a sample every poll — check <code>/api/poll</code> if it never started.
             </p>
           </div>
