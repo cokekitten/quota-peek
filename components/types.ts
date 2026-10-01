@@ -61,6 +61,35 @@ export interface ProviderResult {
 /** Per-provider "has credentials" split, from GET /api/config. */
 export type ConfiguredMap = Record<ProviderKey, boolean>;
 
+export const PROVIDER_LABELS: Record<ProviderKey, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  glm: 'GLM',
+  supergrok: 'SuperGrok',
+  minimax: 'MiniMax',
+  kimi: 'Kimi',
+  volcengine: 'Volcengine',
+  stepfun: 'StepFun',
+  deepseek: 'DeepSeek',
+  mimo: 'MiMo',
+  openrouter: 'OpenRouter',
+};
+
+/** Dashboard / history-page card order. */
+export const PROVIDER_ORDER: ProviderKey[] = [
+  'claude',
+  'kimi',
+  'codex',
+  'deepseek',
+  'mimo',
+  'glm',
+  'stepfun',
+  'supergrok',
+  'minimax',
+  'openrouter',
+  'volcengine',
+];
+
 export interface ProviderResponse {
   ok: boolean;
   timestamp: string;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Metric } from './ProviderCard';
+import { deltaBadge, Metric } from './ProviderCard';
+import type { HistorySeries } from '@/lib/history/series';
 
 describe('Metric', () => {
   it('renders a money row as one bare amount — no bar, no percent', () => {
@@ -96,5 +97,104 @@ describe('Metric', () => {
       />,
     );
     expect(html).toContain('insufficient for API calls');
+  });
+});
+
+describe('deltaBadge', () => {
+  const NOW = 1_800_000_000_000;
+
+  it('shows a percentage-point change since the previous reading', () => {
+    expect(deltaBadge({ kind: 'pp', value: 2.5, at: NOW - 5 * 60_000, gapMs: 5 * 60_000 }, NOW)).toEqual({
+      text: '+2.5%',
+      cls: 'over',
+      title: '2.5 percentage points since 5 min',
+    });
+  });
+
+  it('rounds a tiny change to ±0 rather than noise', () => {
+    const b = deltaBadge({ kind: 'pp', value: 0.01, at: NOW - 60_000, gapMs: 60_000 }, NOW);
+    expect(b?.text).toBe('±0%');
+    expect(b?.cls).toBe('even');
+  });
+
+  it('says the window rolled over instead of claiming a -98% drop', () => {
+    const b = deltaBadge({ kind: 'reset', at: NOW - 5 * 60_000 }, NOW);
+    expect(b?.text).toBe('↻ reset');
+    expect(b?.cls).toBe('even');
+    expect(b?.title).toMatch(/rolled over/i);
+  });
+
+  it('formats money deltas with the row unit', () => {
+    const b = deltaBadge({ kind: 'abs', value: -2.5, at: NOW - 3 * 3_600_000, gapMs: 3 * 3_600_000, unit: '¥' }, NOW);
+    expect(b?.text).toBe('-¥2.5');
+    expect(b?.cls).toBe('under');
+    expect(b?.title).toBe('¥2.5 since 3 h');
+  });
+
+  it('returns null when there is no history yet', () => {
+    expect(deltaBadge(null, NOW)).toBeNull();
+    expect(deltaBadge(undefined, NOW)).toBeNull();
+  });
+});
+
+describe('Metric with history', () => {
+  const series = (over: Partial<HistorySeries> = {}): HistorySeries => ({
+    key: 'merged:5h',
+    provider: 'claude',
+    scope: 'merged',
+    kind: '5h',
+    label: '5h Window',
+    mode: 'percent',
+    unit: null,
+    points: [
+      { t: 1, v: 30 },
+      { t: 2, v: 42 },
+    ],
+    delta: { kind: 'pp', value: 12, at: 2, gapMs: 1 },
+    estimated: false,
+    stale: false,
+    ...over,
+  });
+
+  it('renders the sparkline and the change badge next to the percent', () => {
+    const html = renderToStaticMarkup(
+      <Metric label="5h Window" limit={{ label: '5h', kind: '5h', percent: 42 }} series={series()} />,
+    );
+    expect(html).toContain('class="spark-row"');
+    expect(html).toContain('+12.0%');
+  });
+
+  it('charts money rows too — a balance curve is the most useful one', () => {
+    const html = renderToStaticMarkup(
+      <Metric
+        label="Balance"
+        limit={{ label: 'Balance', kind: 'balance', percent: 0, used: 141.09, unit: '¥' }}
+        series={series({ key: 'merged:balance', kind: 'balance', mode: 'absolute', unit: '¥' })}
+      />,
+    );
+    expect(html).toContain('class="spark-row"');
+  });
+
+  it('draws nothing when history has fewer than two readings', () => {
+    const html = renderToStaticMarkup(
+      <Metric
+        label="5h Window"
+        limit={{ label: '5h', kind: '5h', percent: 42 }}
+        series={series({ points: [{ t: 1, v: 42 }], delta: null })}
+      />,
+    );
+    expect(html).not.toContain('spark-row');
+  });
+
+  it('keeps rendering the row when the sampler has stalled', () => {
+    const html = renderToStaticMarkup(
+      <Metric
+        label="5h Window"
+        limit={{ label: '5h', kind: '5h', percent: 42 }}
+        series={series({ stale: true })}
+      />,
+    );
+    expect(html).toContain('sampler stalled');
+    expect(html).toMatch(/>42%</);
   });
 });

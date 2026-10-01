@@ -1,12 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { ProviderKey, ProviderResponse, ProviderResult, UsageLimit } from './types';
+import Sparkline from './Sparkline';
+import type { HistoryDelta, HistorySeries } from '@/lib/history/series';
+import { PROVIDER_LABELS, type ProviderKey, type ProviderResponse, type ProviderResult, type UsageLimit } from './types';
 
 interface Props {
   provider: ProviderKey;
   /** Increments when Dashboard requests a refresh; card refetches on change. */
   refreshKey: number;
+  /** Sparkline series for this provider, from the dashboard's history request. */
+  series?: HistorySeries[];
 }
 
 // Slots per provider. Most providers report 5h + Weekly windows.
@@ -52,7 +56,7 @@ type State =
   // Initial fetch failed with no data to fall back on.
   | { status: 'error'; message: string };
 
-export default function ProviderCard({ provider, refreshKey }: Props) {
+export default function ProviderCard({ provider, refreshKey, series }: Props) {
   const [state, setState] = useState<State>({ status: 'loading' });
   /** Selected account tab: 0 = merged view, 1..n = per-account. */
   const [acct, setAcct] = useState(0);
@@ -83,7 +87,7 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
       });
   }, [provider, refreshKey]);
 
-  const label = LABELS[provider];
+  const label = PROVIDER_LABELS[provider];
 
   // Genuine error with no prior data → offline card.
   if (state.status === 'error') {
@@ -132,6 +136,10 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
   const planLabel = accountView ? accountView.planLabel : summary?.planLabel ?? undefined;
   const stale = state.status === 'ready' && !!state.data.stale;
   const partial = multi && !!summary?.partial;
+  // History follows the account tab: the Σ view charts the merged row, the
+  // per-account tabs chart that account's own row.
+  const scope = accountView ? accountView.key : 'merged';
+  const findSeries = (kind: string) => series?.find((s) => s.scope === scope && s.kind === kind);
 
   return (
     <div className={`card${loading ? ' loading' : ''}`}>
@@ -184,7 +192,15 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
         getSlots(provider).map((slot) => {
           // Match by kind; a window missing from the response renders at 0%.
           const limit = limits.find((l) => l.kind === slot.kind);
-          return <Metric key={slot.kind} label={slot.label} limit={limit} dim={busy} />;
+          return (
+            <Metric
+              key={slot.kind}
+              label={slot.label}
+              limit={limit}
+              dim={busy}
+              series={findSeries(slot.kind)}
+            />
+          );
         })
       )}
       {/* Windows beyond the static slots (e.g. Claude's model-scoped Fable
@@ -192,7 +208,9 @@ export default function ProviderCard({ provider, refreshKey }: Props) {
       {!(accountView && !accountView.ok) &&
         limits
           .filter((l) => !getSlots(provider).some((s) => s.kind === l.kind))
-          .map((l) => <Metric key={l.kind} label={l.label} limit={l} dim={busy} />)}
+          .map((l) => (
+            <Metric key={l.kind} label={l.label} limit={l} dim={busy} series={findSeries(l.kind)} />
+          ))}
     </div>
   );
 }
@@ -201,11 +219,16 @@ export function Metric({
   label,
   limit,
   dim,
+  series,
 }: {
   label: string;
   limit?: UsageLimit;
   dim?: boolean;
+  /** Recorded trend for this exact row (scope + kind), if the store has one. */
+  series?: HistorySeries;
 }) {
+  const badge = deltaBadge(series?.delta);
+  const trend = seriesTrend(series);
   // Money rows (Balance) are an amount, not a window: state the figure once,
   // with no bar, percent or pace — a progress bar over a money pool means
   // nothing. A window rollover (e.g. OpenRouter's Month Spend) still shows
@@ -215,8 +238,16 @@ export function Metric({
       <div className="metric">
         <div className="k">
           <span>{label}</span>
-          <span className="v">{limit.used !== undefined ? fmtAbs(limit.used, limit.unit) : '—'}</span>
+          <span className="v">
+            {limit.used !== undefined ? fmtAbs(limit.used, limit.unit) : '—'}
+            {badge && (
+              <span className={`delta ${badge.cls}`} title={badge.title}>
+                {badge.text}
+              </span>
+            )}
+          </span>
         </div>
+        {trend}
         {(limit.detail || limit.resetAt) && (
           <div className="meta">
             {limit.detail && <span className="detail">{limit.detail}</span>}
@@ -262,11 +293,17 @@ export function Metric({
               {pace.text}
             </span>
           )}
+          {badge && (
+            <span className={`delta ${badge.cls}`} title={badge.title}>
+              {badge.text}
+            </span>
+          )}
         </span>
       </div>
       <div className="bar">
         <span className={sev} style={{ width: `${barPct}%`, opacity: dim ? 0.4 : 1 }} />
       </div>
+      {trend}
       {(abs || limit?.detail || reset) && (
         <div className="meta">
           {abs && (
@@ -337,6 +374,74 @@ function paceFromExpected(
   };
 }
 
+/**
+ * Change since the previous reading, rendered next to the current number.
+ *
+ * A window rollover returns no delta at all (a reset is not a drop), so the
+ * badge says so instead of inventing a -98%.
+ */
+export function deltaBadge(
+  delta: HistoryDelta | null | undefined,
+  now: number = Date.now(),
+): { text: string; cls: 'over' | 'under' | 'even'; title: string } | null {
+  if (!delta) return null;
+  if (delta.kind === 'reset') {
+    return { text: '↻ reset', cls: 'even', title: 'Window rolled over — usage since reset, no change to compare' };
+  }
+  const when = `since ${fmtAgo(now - delta.at)}`;
+  const v = delta.value;
+  const sign = v > 0 ? '+' : v < 0 ? '-' : '';
+  const mag = Math.abs(v);
+  const cls = v > 0.05 ? 'over' : v < -0.05 ? 'under' : 'even';
+  if (delta.kind === 'pp') {
+    const one = Math.round(mag * 10) / 10;
+    return {
+      text: mag < 0.05 ? '±0%' : `${sign}${one.toFixed(1)}%`,
+      cls,
+      title: `${one.toFixed(1)} percentage points ${when}`,
+    };
+  }
+  const amount = fmtAbs(mag, delta.unit ?? undefined);
+  return {
+    text: mag < 0.005 ? '±0' : `${sign}${amount}`,
+    cls,
+    title: `${amount} ${when}`,
+  };
+}
+
+/** The recorded trend for one row, or null when there is nothing to draw. */
+export function seriesTrend(series: HistorySeries | undefined, dim?: boolean) {
+  const points = series?.points ?? [];
+  if (points.length < 2) return null;
+  // Two identical readings are a coincidence, not a trend — drawing them would
+  // just put a decorative rule under the bar.
+  if (points.length === 2 && points[0].v === points[1].v) return null;
+  const last = points[points.length - 1];
+  const unit = series!.mode === 'absolute' && series!.unit ? ` ${series!.unit}` : '%';
+  return (
+    <div className={`spark-row${dim ? ' dim' : ''}`}>
+      <Sparkline
+        points={points}
+        tone={series!.stale ? 'muted' : 'accent'}
+        title={`${points.length} readings · latest ${Math.round(last.v * 10) / 10}${unit}${
+          series!.stale ? ' · sampler stalled' : ''
+        }`}
+      />
+    </div>
+  );
+}
+
+/** Compact "time since" label: 45s / 12 min / 3 h / 2 d 4 h. */
+function fmtAgo(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return 'now';
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`;
+  const min = Math.round(ms / 60_000);
+  if (min < 60) return `${min} min`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} h`;
+  return `${Math.floor(hr / 24)} d ${hr % 24} h`;
+}
+
 function fmtRel(iso: string): string {
   const ms = new Date(iso).getTime() - Date.now();
   if (ms <= 0) return 'now';
@@ -367,16 +472,3 @@ function fmtAbs(n: number, unit?: string): string {
   return `${trim(n)}${suffix}`;
 }
 
-const LABELS: Record<ProviderKey, string> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  glm: 'GLM',
-  supergrok: 'SuperGrok',
-  minimax: 'MiniMax',
-  kimi: 'Kimi',
-  volcengine: 'Volcengine',
-  stepfun: 'StepFun',
-  deepseek: 'DeepSeek',
-  mimo: 'MiMo',
-  openrouter: 'OpenRouter',
-};

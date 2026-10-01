@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ProviderCard from './ProviderCard';
+import type { HistorySeries } from '@/lib/history/series';
 import type { ConfiguredMap, ProviderKey } from './types';
 
 interface Props {
@@ -13,6 +14,10 @@ interface Props {
 const AUTO_INTERVAL = 10 * 60 * 1000; // 10 minutes
 const REFOCUS_THRESHOLD = 3 * 60 * 1000; // refresh on tab refocus after 3 min
 const SHOW_UNCONFIGURED_KEY = 'qp-show-unconfigured';
+// Sparkline window: long enough to watch a 5h window roll over, short enough
+// that a 24-point line stays readable at card width.
+const HISTORY_RANGE = '6h';
+const HISTORY_MAX_POINTS = 24;
 
 export default function Dashboard({ providers, initialConfigured }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -24,6 +29,9 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
   const [configured, setConfigured] = useState<ConfiguredMap>(initialConfigured);
   const [showUnconfigured, setShowUnconfigured] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(() => new Date());
+  // Per-provider sparkline series, fetched once for every card. Best-effort: a
+  // failure leaves the cards exactly as they are.
+  const [history, setHistory] = useState<Record<string, HistorySeries[]>>({});
   const autoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   // Timestamp of the last refresh trigger; used to decide whether a refocus
   // should fetch again (only if more than REFOCUS_THRESHOLD has passed).
@@ -79,6 +87,31 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
         /* keep the current split */
       });
   }, []);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/history?range=${HISTORY_RANGE}&max=${HISTORY_MAX_POINTS}`);
+      if (!r.ok) return;
+      const json = (await r.json()) as {
+        ok?: boolean;
+        providers?: Record<string, { series?: HistorySeries[] }>;
+      };
+      if (!json?.ok || !json.providers) return;
+      // Unwrap {series: [...]} per provider and drop anything malformed — a
+      // card with no history renders exactly as it did before.
+      const next: Record<string, HistorySeries[]> = {};
+      for (const [key, value] of Object.entries(json.providers)) {
+        if (Array.isArray(value?.series)) next[key] = value.series;
+      }
+      setHistory(next);
+    } catch {
+      /* sparklines are decoration; live usage is the point */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory, refreshKey]);
 
   const refresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -173,6 +206,14 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
           <button className="refresh" onClick={refresh}>
             Refresh
           </button>
+          <a
+            className="pill history-link"
+            href="/history"
+            title="Usage history — trend per window, and what every poll and refresh saw"
+          >
+            <span className="dot" />
+            History
+          </a>
           <button
             className="theme-toggle"
             onClick={toggleTheme}
@@ -198,7 +239,7 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
         ) : (
           <div className="grid">
             {visible.map((p) => (
-              <ProviderCard key={p} provider={p} refreshKey={refreshKey} />
+              <ProviderCard key={p} provider={p} refreshKey={refreshKey} series={history[p]} />
             ))}
           </div>
         )}

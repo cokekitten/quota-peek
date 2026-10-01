@@ -446,6 +446,67 @@ main {
   background: color-mix(in srgb, #34d399 12%, transparent);
 }
 
+/* ---- Usage history: per-row sparkline + change badge ---- */
+.metric .k .v .delta {
+  margin-left: 7px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  vertical-align: 1px;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+  color: var(--muted);
+}
+/* More usage than last reading = the direction worth noticing. */
+.metric .k .v .delta.over {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.metric .k .v .delta.under {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+:root[data-theme='c'] .metric .k .v .delta.over {
+  color: #f87171;
+}
+:root[data-theme='c'] .metric .k .v .delta.under {
+  color: #34d399;
+}
+
+.spark-row {
+  margin-top: 6px;
+  height: 18px;
+  opacity: 0.75;
+  transition: opacity 0.3s ease;
+}
+.spark-row.dim {
+  opacity: 0.3;
+}
+.spark-row .spark {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.spark-row .spark-reset {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0.45;
+}
+
+/* Header link to the history page. */
+.pill.history-link {
+  text-decoration: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pill.history-link:hover {
+  color: var(--text);
+  border-color: var(--tag-border);
+}
+
 .bar {
   height: var(--bar-height);
   background: var(--bar-track);
