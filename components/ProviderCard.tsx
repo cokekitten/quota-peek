@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Sparkline from './Sparkline';
 import type { HistoryDelta, HistorySeries } from '@/lib/history/series';
 import { PROVIDER_LABELS, type ProviderKey, type ProviderResponse, type ProviderResult, type UsageLimit } from './types';
 
@@ -224,11 +223,10 @@ export function Metric({
   label: string;
   limit?: UsageLimit;
   dim?: boolean;
-  /** Recorded trend for this exact row (scope + kind), if the store has one. */
+  /** Recorded readings for this exact row (scope + kind), if the store has any. */
   series?: HistorySeries;
 }) {
   const badge = deltaBadge(series?.delta);
-  const trend = seriesTrend(series);
   // Money rows (Balance) are an amount, not a window: state the figure once,
   // with no bar, percent or pace — a progress bar over a money pool means
   // nothing. A window rollover (e.g. OpenRouter's Month Spend) still shows
@@ -247,7 +245,6 @@ export function Metric({
             )}
           </span>
         </div>
-        {trend}
         {(limit.detail || limit.resetAt) && (
           <div className="meta">
             {limit.detail && <span className="detail">{limit.detail}</span>}
@@ -303,7 +300,6 @@ export function Metric({
       <div className="bar">
         <span className={sev} style={{ width: `${barPct}%`, opacity: dim ? 0.4 : 1 }} />
       </div>
-      {trend}
       {(abs || limit?.detail || reset) && (
         <div className="meta">
           {abs && (
@@ -407,28 +403,6 @@ export function deltaBadge(
     cls,
     title: `${amount} ${when}`,
   };
-}
-
-/** The recorded trend for one row, or null when there is nothing to draw. */
-export function seriesTrend(series: HistorySeries | undefined, dim?: boolean) {
-  const points = series?.points ?? [];
-  if (points.length < 2) return null;
-  // Two identical readings are a coincidence, not a trend — drawing them would
-  // just put a decorative rule under the bar.
-  if (points.length === 2 && points[0].v === points[1].v) return null;
-  const last = points[points.length - 1];
-  const unit = series!.mode === 'absolute' && series!.unit ? ` ${series!.unit}` : '%';
-  return (
-    <div className={`spark-row${dim ? ' dim' : ''}`}>
-      <Sparkline
-        points={points}
-        tone={series!.stale ? 'muted' : 'accent'}
-        title={`${points.length} readings · latest ${Math.round(last.v * 10) / 10}${unit}${
-          series!.stale ? ' · sampler stalled' : ''
-        }`}
-      />
-    </div>
-  );
 }
 
 /** Compact "time since" label: 45s / 12 min / 3 h / 2 d 4 h. */

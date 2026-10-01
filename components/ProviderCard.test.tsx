@@ -156,26 +156,34 @@ describe('Metric with history', () => {
     ...over,
   });
 
-  it('renders the sparkline and the change badge next to the percent', () => {
+  it('shows the change badge next to the percent, and no chart', () => {
     const html = renderToStaticMarkup(
       <Metric label="5h Window" limit={{ label: '5h', kind: '5h', percent: 42 }} series={series()} />,
     );
-    expect(html).toContain('class="spark-row"');
     expect(html).toContain('+12.0%');
+    // The dashboard stays a glanceable snapshot: a trend line under every bar
+    // read as a stray rule. Curves live on /history.
+    expect(html).not.toContain('<svg');
   });
 
-  it('charts money rows too — a balance curve is the most useful one', () => {
+  it('badges money rows in their own unit', () => {
     const html = renderToStaticMarkup(
       <Metric
         label="Balance"
         limit={{ label: 'Balance', kind: 'balance', percent: 0, used: 141.09, unit: '¥' }}
-        series={series({ key: 'merged:balance', kind: 'balance', mode: 'absolute', unit: '¥' })}
+        series={series({
+          key: 'merged:balance',
+          kind: 'balance',
+          mode: 'absolute',
+          unit: '¥',
+          delta: { kind: 'abs', value: -2.5, at: 2, gapMs: 1, unit: '¥' },
+        })}
       />,
     );
-    expect(html).toContain('class="spark-row"');
+    expect(html).toContain('-¥2.5');
   });
 
-  it('draws nothing when history has fewer than two readings', () => {
+  it('shows no badge at all when there is nothing to compare against', () => {
     const html = renderToStaticMarkup(
       <Metric
         label="5h Window"
@@ -183,10 +191,11 @@ describe('Metric with history', () => {
         series={series({ points: [{ t: 1, v: 42 }], delta: null })}
       />,
     );
-    expect(html).not.toContain('spark-row');
+    expect(html).not.toContain('class="delta');
+    expect(html).toMatch(/>42%</);
   });
 
-  it('keeps rendering the row when the sampler has stalled', () => {
+  it('still renders the row when the sampler has stalled', () => {
     const html = renderToStaticMarkup(
       <Metric
         label="5h Window"
@@ -194,7 +203,7 @@ describe('Metric with history', () => {
         series={series({ stale: true })}
       />,
     );
-    expect(html).toContain('sampler stalled');
     expect(html).toMatch(/>42%</);
+    expect(html).toContain('+12.0%');
   });
 });

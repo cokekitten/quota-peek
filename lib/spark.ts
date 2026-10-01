@@ -1,6 +1,6 @@
 /**
- * Tiny hand-rolled sparkline (no chart library — the dashboard ships zero
- * runtime deps on purpose).
+ * Trend geometry for the history charts — pure, no chart library (the project
+ * ships zero runtime deps on purpose).
  *
  * Two behaviours matter for honesty rather than looks:
  *  - `br` (poller gap) splits the polyline instead of bridging it, so a
@@ -8,8 +8,9 @@
  *  - a window reset (`reset`) is a break too, with the reset drawn as a
  *    dotted vertical rule.
  *
- * The geometry is exported separately from the component: the card renders a
- * 100×20 sparkline, the history page renders the same shapes with axes.
+ * <TrendChart> renders these segments with axes; the dashboard cards render no
+ * chart at all — they only carry the change badge, which stays readable at a
+ * glance while a trend line does not.
  */
 
 export interface SparkPoint {
@@ -105,67 +106,4 @@ export function sparkGeometry(
     yRange: [min, max],
     count: usable.length,
   };
-}
-
-export interface SparklineProps {
-  points: readonly SparkPoint[];
-  width?: number;
-  height?: number;
-  /** Stroke colour: a CSS var, so the theme toggle keeps working. */
-  tone?: 'accent' | 'muted';
-  title?: string;
-  className?: string;
-}
-
-const TONE: Record<string, string> = {
-  accent: 'var(--accent)',
-  muted: 'var(--muted)',
-};
-
-export default function Sparkline({
-  points,
-  width = 100,
-  height = 20,
-  tone = 'accent',
-  title,
-  className,
-}: SparklineProps) {
-  const geo = sparkGeometry(points, width, height);
-  if (geo.count === 0) return null;
-  const stroke = TONE[tone] ?? TONE.accent;
-  return (
-    <svg
-      className={className ? `spark ${className}` : 'spark'}
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={title ?? 'usage trend'}
-    >
-      {title ? <title>{title}</title> : null}
-      {geo.resets.map((rx, i) => (
-        <line
-          key={`r${i}`}
-          x1={rx}
-          x2={rx}
-          y1={0}
-          y2={height}
-          className="spark-reset"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
-      {geo.paths.map((d, i) => (
-        <path
-          key={i}
-          d={d}
-          fill="none"
-          stroke={stroke}
-          strokeWidth={1.25}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
-      {geo.end ? <circle cx={geo.end.x} cy={geo.end.y} r={1.4} fill={stroke} /> : null}
-    </svg>
-  );
 }

@@ -14,10 +14,12 @@ interface Props {
 const AUTO_INTERVAL = 10 * 60 * 1000; // 10 minutes
 const REFOCUS_THRESHOLD = 3 * 60 * 1000; // refresh on tab refocus after 3 min
 const SHOW_UNCONFIGURED_KEY = 'qp-show-unconfigured';
-// Sparkline window: long enough to watch a 5h window roll over, short enough
-// that a 24-point line stays readable at card width.
+// The cards only show a change badge, so the server sends just the two
+// readings the delta is computed from (the delta itself is always taken from
+// the raw rows, never from downsampled points). The window is still 6h so a
+// long-stalled poller reports "no change" instead of an invented one.
 const HISTORY_RANGE = '6h';
-const HISTORY_MAX_POINTS = 24;
+const HISTORY_MAX_POINTS = 2;
 
 export default function Dashboard({ providers, initialConfigured }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -29,8 +31,8 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
   const [configured, setConfigured] = useState<ConfiguredMap>(initialConfigured);
   const [showUnconfigured, setShowUnconfigured] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(() => new Date());
-  // Per-provider sparkline series, fetched once for every card. Best-effort: a
-  // failure leaves the cards exactly as they are.
+  // Per-provider readings behind the change badge, fetched once for every
+  // card. Best-effort: a failure leaves the cards exactly as they are.
   const [history, setHistory] = useState<Record<string, HistorySeries[]>>({});
   const autoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   // Timestamp of the last refresh trigger; used to decide whether a refocus
@@ -105,7 +107,7 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
       }
       setHistory(next);
     } catch {
-      /* sparklines are decoration; live usage is the point */
+      /* the change badge is decoration; live usage is the point */
     }
   }, []);
 

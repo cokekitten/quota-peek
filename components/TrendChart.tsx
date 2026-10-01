@@ -1,6 +1,6 @@
 'use client';
 
-import { sparkGeometry } from './Sparkline';
+import { sparkGeometry } from '@/lib/spark';
 import type { HistorySeries } from '@/lib/history/series';
 
 /**

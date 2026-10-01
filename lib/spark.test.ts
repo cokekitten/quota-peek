@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderToStaticMarkup } from 'react-dom/server';
-import Sparkline, { sparkGeometry, type SparkPoint } from './Sparkline';
+import { sparkGeometry, type SparkPoint } from './spark';
 
 const pts = (vs: number[], step = 1): SparkPoint[] =>
   vs.map((v, i) => ({ t: 1_000 + i * step, v }));
@@ -56,22 +55,5 @@ describe('sparkGeometry', () => {
   it('ignores non-finite values and handles the empty case', () => {
     expect(sparkGeometry([]).count).toBe(0);
     expect(sparkGeometry([{ t: 0, v: Number.NaN }]).count).toBe(0);
-  });
-});
-
-describe('Sparkline', () => {
-  it('renders one path plus the end dot, and nothing at all without points', () => {
-    const html = renderToStaticMarkup(<Sparkline points={pts([1, 2, 3])} title="3 readings" />);
-    expect(html).toContain('<svg');
-    expect(html.match(/<path/g)).toHaveLength(1);
-    expect(html).toContain('<circle');
-    expect(html).toContain('<title>3 readings</title>');
-    expect(renderToStaticMarkup(<Sparkline points={[]} />)).toBe('');
-  });
-
-  it('uses a non-scaling stroke so the line stays 1.25px at any card width', () => {
-    const html = renderToStaticMarkup(<Sparkline points={pts([1, 2])} />);
-    expect(html).toContain('vector-effect="non-scaling-stroke"');
-    expect(html).toContain('preserveAspectRatio="none"');
   });
 });

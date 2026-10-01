@@ -17,7 +17,7 @@ Quota Peek aggregates live usage/quota from major AI coding/subscription plans i
 - **Independent cards** — the dashboard fires one parallel request per provider; each card renders the instant its provider responds. The slowest never blocks the rest.
 - **Normalized metrics** — providers show their real windows (**5h Window** and/or **Weekly**, depending on what the plan actually has), with precise countdowns like `Resets in 4 hr 36 min` or `Resets in 1 d 6 hr`.
 - **Smart refresh** — manual refresh, optional auto-refresh (10 min), and automatic refresh when you refocus the tab after 3+ minutes.
-- **Usage history** — a background sampler (5 min, no cron) records every provider reading to a local SQLite file: percentage, absolute figures, each account separately, and failures. Cards get a sparkline plus a change badge (`+2.5%`, `-¥0.31`, `↻ reset` when a window rolled over), and `/history` charts any window over 24 h / 7 d / 30 d next to a log of what each read saw. CSV export included.
+- **Usage history** — a background sampler (5 min, no cron) records every provider reading to a local SQLite file: percentage, absolute figures, each account separately, and failures. Cards stay a glanceable snapshot with a change badge (`+2.5%`, `-¥0.31`, `↻ reset` when a window rolled over) — a trend line under every bar reads as a stray rule, so the curves live on `/history`: any window over 24 h / 7 d / 30 d, next to a log of what each read saw. CSV export included.
 - **Resilient** — a provider that errors out degrades to an offline card; it never breaks the others. Claude's results are cached briefly and served stale on failure.
 - **No dead cards** — a provider with no key / no credential file is hidden instead of occupying a slot; the `No key ×N` pill in the header reveals them (each one names the variable to set) and the choice is remembered in `localStorage`. A provider that **is** configured but failing — expired token, 429, network down — never hides, because that's the signal you opened the dashboard for.
 - **Zero infrastructure** — a single Next.js app plus one SQLite file. Run it, open it, done; history is just a file you can delete or back up.
@@ -183,7 +183,7 @@ GLM, MiniMax, Kimi, Volcengine, StepFun, DeepSeek, MiMo and OpenRouter support m
 
 ```
 GET /api/usage/[provider]      ← single dynamic route: claude | codex | glm | supergrok | minimax | kimi | volcengine | stepfun | deepseek | mimo | openrouter
-GET /api/history               ← short window for the card sparklines (all providers, one request)
+GET /api/history               ← short window behind the card change badges (all providers, one request)
 GET /api/history/[provider]    ← one channel: chart series + refresh log
 GET /api/history/[provider]/export   ← the same rows as CSV
 GET /api/poll                  ← poller control: GET starts/reports, POST runs a round now (loopback only)
@@ -214,10 +214,10 @@ app/
   layout.tsx · page.tsx           # root layout + server shell → <Dashboard />
   history/page.tsx                # 'use client' — provider/range switch, charts, refresh log
 components/
-  Dashboard.tsx                   # 'use client' — parallel fetches, refresh logic, refocus, sparkline data
+  Dashboard.tsx                   # 'use client' — parallel fetches, refresh logic, refocus, history data
   ProviderCard.tsx                # 'use client' — per-card state, bars, countdowns, Δ badge
-  Sparkline.tsx                   # 'use client' — SVG trend geometry (segments, gaps, reset rules)
-  TrendChart.tsx                  # 'use client' — the same geometry with axes, for /history
+  TrendChart.tsx                  # 'use client' — SVG charts with axes, for /history
+lib/spark.ts                     # trend geometry (segments, gaps, reset rules) — pure
   types.ts                        # client-side response types
 lib/history/
   db.ts                           # SQLite connection + schema (two tables, additive)
@@ -245,9 +245,11 @@ with "no data".
   sample for every page-driven read (`source` is `poll` or `page` in the data).
   It starts itself through `GET /api/poll` at boot and is idempotent — one
   timer per process, and it never starts a second round while one is running.
-- **Cards** get a sparkline of the last 6 h and a change badge against the
-  previous reading. Money rows are charted in their own unit (¥ spent, balance
-  left), because a balance has no percentage to speak of.
+- **Cards** carry one change badge per row — the difference against the
+  previous reading — and nothing else. They stay a snapshot you can read in
+  one glance; a trend line under every bar only adds noise there. Money rows
+  are compared in their own unit (¥ spent, balance left), because a balance has
+  no percentage to speak of.
 - **`/history`** charts each window (and each account) over 24 h / 7 d / 30 d,
   with the refresh log underneath: one row per read, source, values, error.
   `Export CSV` gives the raw rows for spreadsheet work.

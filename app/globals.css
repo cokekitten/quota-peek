@@ -446,7 +446,7 @@ main {
   background: color-mix(in srgb, #34d399 12%, transparent);
 }
 
-/* ---- Usage history: per-row sparkline + change badge ---- */
+/* ---- Usage history: the per-row change badge ---- */
 .metric .k .v .delta {
   margin-left: 7px;
   font-size: 10px;
@@ -472,28 +472,6 @@ main {
 }
 :root[data-theme='c'] .metric .k .v .delta.under {
   color: #34d399;
-}
-
-.spark-row {
-  margin-top: 6px;
-  height: 18px;
-  opacity: 0.75;
-  transition: opacity 0.3s ease;
-}
-.spark-row.dim {
-  opacity: 0.3;
-}
-.spark-row .spark {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-.spark-row .spark-reset {
-  stroke: var(--muted);
-  stroke-width: 1;
-  stroke-dasharray: 2 2;
-  opacity: 0.45;
 }
 
 /* Header link to the history page. */
