@@ -111,3 +111,74 @@ describe('fetchKimiUsage', () => {
     expect(r.summary!.limits[0].estimated).toBe(true);
   });
 });
+
+describe('quota blocks that omit `used`', () => {
+  // A brand-new account: Kimi sends {limit, remaining} with no `used` at all.
+  const UNUSED = {
+    user: { membership: { level: 'LEVEL_ADVANCED' } },
+    usage: { limit: '100', remaining: '100', resetTime: '2026-10-07T18:21:05.014684Z' },
+    limits: [
+      {
+        window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' },
+        detail: { limit: '100', remaining: '100', resetTime: '2026-10-01T22:04:03.404719Z' },
+      },
+    ],
+  };
+
+  afterEach(() => {
+    delete process.env.KIMI_API_KEY;
+    delete process.env.KIMI_API_KEY_2;
+    vi.unstubAllGlobals();
+  });
+
+  it('reads used as limit − remaining, so a fresh account is a real 0% row', async () => {
+    process.env.KIMI_API_KEY = 'sk-a';
+    process.env.KIMI_API_KEY_2 = 'sk-b';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(UNUSED), { status: 200 })));
+    const r = await fetchKimiUsage();
+    expect(r.ok).toBe(true);
+    const merged = r.summary!.limits.find((l) => l.kind === 'weekly');
+    expect(merged).toMatchObject({ kind: 'weekly', percent: 0 });
+    // The 5h window is present too, instead of silently missing.
+    expect(r.summary!.limits.find((l) => l.kind === '5h')).toMatchObject({ percent: 0 });
+    // Both accounts get a scope, so both are recorded from now on.
+    expect(r.summary!.accounts?.map((a) => [a.key, a.limits.length])).toEqual([
+      ['1', 2],
+      ['2', 2],
+    ]);
+  });
+
+  it('fails the account loudly when the payload has no usable window at all', async () => {
+    // 200 OK, but a shape we don't understand: reporting ok:true with zero
+    // rows would leave an empty tab and a silently incomplete merge.
+    process.env.KIMI_API_KEY = 'sk-a';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ user: {}, booster_wallet: {} }), { status: 200 })),
+    );
+    const r = await fetchKimiUsage();
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/no usage window/);
+  });
+
+  it('treats a block with neither used nor remaining as unknown, not as 0', async () => {
+    process.env.KIMI_API_KEY = 'sk-a';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              user: {},
+              usage: { limit: '100', resetTime: '2026-10-07T00:00:00.000Z' },
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    const r = await fetchKimiUsage();
+    // No figure at all → not ok (rather than inventing a 0% that would be
+    // recorded as "this account used nothing").
+    expect(r.ok).toBe(false);
+  });
+});

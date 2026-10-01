@@ -151,6 +151,20 @@ async function fetchKimiAccount(account: KimiAccount): Promise<ProviderResult> {
     const weekly = quotaLimit(data.usage, 'Weekly', 'weekly');
     if (weekly) limits.push(weekly);
 
+    // A 200 with nothing usable means the payload shape changed (or this
+    // account has no plan at all). Reporting ok:true with zero rows would make
+    // it indistinguishable from a healthy idle account: the card would show an
+    // empty tab, the merge would silently drop it, and nothing would be
+    // recorded. Fail it loudly instead — the card marks the merge partial.
+    if (limits.length === 0) {
+      return {
+        ok: false,
+        provider,
+        label,
+        error: 'HTTP 200 but no usage window in the response — unexpected payload shape',
+      };
+    }
+
     const level = data.user?.membership?.level;
     return {
       ok: true,
@@ -242,11 +256,28 @@ async function getAccessToken(account: KimiAccount): Promise<string> {
 /** Map one quota block { limit, used, resetTime } (string numbers) into UsageLimit.
  * The limit/used counts are percent denominators ("7 / 100") — noise next to
  * the percentage itself, so only the derived percent ships to the card. */
+/**
+ * One quota block → one row.
+ *
+ * Kimi omits the `used` field entirely when nothing has been consumed on that
+ * window (`{limit:"100", remaining:"100"}`), and `Number(undefined)` is NaN —
+ * reading that as "no data" dropped a perfectly good 0% row, which is how a
+ * brand-new account ended up with no history at all. `remaining` is the
+ * authoritative figure whenever `used` is absent; only a payload with neither
+ * is treated as unknown (an honest gap beats a fabricated 0).
+ */
 function quotaLimit(q: KimiQuota | undefined, label: string, kind: string): UsageLimit | null {
   if (!q) return null;
   const limit = Number(q.limit);
-  const used = Number(q.used);
-  if (!Number.isFinite(limit) || limit <= 0 || !Number.isFinite(used)) return null;
+  if (!Number.isFinite(limit) || limit <= 0) return null;
+  const num = (v: unknown): number | null => {
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const used =
+    num(q.used) ?? (num(q.remaining) !== null ? Math.max(0, limit - (num(q.remaining) as number)) : null);
+  if (used === null) return null;
   const out: UsageLimit = {
     label,
     kind,
