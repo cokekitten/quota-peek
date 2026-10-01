@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
-import { fetchOneUsage, PROVIDER_KEYS } from '@/lib/providers';
+import { PROVIDER_KEYS } from '@/lib/providers';
 import type { ProviderResponse } from '@/lib/providers';
 import type { ProviderKey } from '@/lib/providers/types';
+import { extractSample } from '@/lib/history/extract';
+import { ensurePoller } from '@/lib/history/poller';
+import { liveUsage } from '@/lib/history/liveCache';
+import { record } from '@/lib/history/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -25,11 +29,20 @@ export async function GET(
     );
   }
 
-  const data = await fetchOneUsage(provider as ProviderKey);
+  // liveUsage collapses a page load with an overlapping poll round onto one
+  // upstream request (60s reuse), which matters for the rate-limited providers.
+  // A page visit also guarantees the poller is running even if the boot
+  // handoff never landed.
+  ensurePoller();
+  const data = await liveUsage(provider as ProviderKey);
   const body: ProviderResponse = {
     ok: true,
     timestamp: new Date().toISOString(),
     provider: data,
   };
+  // Every fetch is a sample: this is the "what did the refresh see" record.
+  // record() never throws — a broken history store must not fail the card.
+  const sample = extractSample(data, 'page');
+  record(sample, sample.ts);
   return NextResponse.json(body);
 }
