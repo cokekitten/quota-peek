@@ -738,9 +738,13 @@ main.history {
   font-weight: 600;
   text-anchor: start;
 }
-:root[data-theme='c'] .chart-line,
-:root[data-theme='c'] .chart-end {
+:root[data-theme='c'] .chart-line {
   stroke: var(--text);
+  fill: none; /* a line, never a filled shape */
+}
+:root[data-theme='c'] .chart-end,
+:root[data-theme='c'] .chart-dot,
+:root[data-theme='c'] .chart-hover-dot {
   fill: var(--text);
 }
 :root[data-theme='c'] .chart-area {
