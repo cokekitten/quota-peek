@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import TrendChart, { fmtChartValue } from '@/components/TrendChart';
 import { deltaBadge } from '@/components/ProviderCard';
+import { foldLog } from '@/lib/history/logfold';
 import type { HistoryLogEntry, HistorySeries } from '@/lib/history/series';
 import { PROVIDER_LABELS, PROVIDER_ORDER, type ProviderKey } from '@/components/types';
 
@@ -45,6 +46,10 @@ function fmtCompact(n: number): string {
 function planSummary(e: HistoryLogEntry): string {
   if (e.planLabels.length === 0) return '';
   return e.planLabels.map((p) => `${p.key} ${p.label}`).join(' · ');
+}
+
+function fmtClock(t: number): string {
+  return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function fmtStamp(t: number): string {
@@ -117,6 +122,11 @@ export default function HistoryPage() {
   useEffect(() => {
     if (scope !== 'merged' && !accountKeys.includes(scope)) setScope('merged');
   }, [accountKeys, scope]);
+  // The log is 5-minute samples: a day of idle usage is ~290 identical rows, so
+  // runs are folded to their first and last with a marker in between.
+  const logItems = useMemo(() => foldLog(log), [log]);
+  const hidden = logItems.filter((i) => i.type === 'fold').reduce((n, i) => n + (i.count ?? 0), 0);
+
   const series = useMemo(
     () => (scope === 'merged' ? all.filter((s) => s.scope === 'merged') : all.filter((s) => s.scope === scope)),
     [all, scope],
@@ -295,46 +305,20 @@ export default function HistoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {log.map((e) => (
-                  <tr key={e.id} className={e.ok ? '' : 'bad'}>
-                    <td className="mono">{fmtStamp(e.ts)}</td>
-                    <td>
-                      <span className={`tag ${e.source}`}>{e.source}</span>
-                    </td>
-                    <td>
-                      {e.rows.length === 0 ? (
-                        <span className="muted">—</span>
-                      ) : (
-                        e.rows.map((r) => (
-                          <span className="chip" key={`${r.scope}-${r.kind}`} title={`${r.label} (${r.scope})`}>
-                            {r.scope !== 'merged' ? `${r.scope}·` : ''}
-                            {r.label}
-                            <b>
-                              {r.v !== null
-                                ? fmtChartValue(r.v, r.kind === 'balance' || r.kind === 'spend' ? 'absolute' : 'percent', r.unit)
-                                : '—'}
-                            </b>
-                          </span>
-                        ))
-                      )}
-                    </td>
-                    <td className="note">
-                      {e.errKind === 'error'
-                        ? e.errText
-                        : e.errKind === 'not_configured'
-                          ? 'not configured'
-                          : e.stale
-                            ? 'cached (live fetch failed)'
-                            : e.errScopes.length
-                              ? // Name the accounts: a merged card that lost a
-                                // member looks like a usage drop otherwise.
-                                `account ${e.errScopes.join(', ')} failed — excluded from the merge`
-                              : e.partial
-                                ? 'partial — an account failed'
-                                : e.planLabel || planSummary(e)}
-                    </td>
-                  </tr>
-                ))}
+                {logItems.map((item, i) =>
+                  item.type === 'fold' ? (
+                    <tr key={`fold${i}`} className="fold">
+                      <td colSpan={4}>
+                        <span className="fold-note">
+                          ⋯ {item.count} more identical read{item.count === 1 ? '' : 's'} ·{' '}
+                          {fmtClock(item.from)} → {fmtClock(item.to)}
+                        </span>
+                      </td>
+                    </tr>
+                  ) : (
+                    <LogRow key={item.entry.id} e={item.entry} />
+                  ),
+                )}
               </tbody>
             </table>
           </section>
@@ -348,5 +332,49 @@ export default function HistoryPage() {
         </span>
       </footer>
     </>
+  );
+}
+
+/** One read in the refresh log. */
+function LogRow({ e }: { e: HistoryLogEntry }) {
+  return (
+    <tr className={e.ok ? '' : 'bad'}>
+      <td className="mono">{fmtStamp(e.ts)}</td>
+      <td>
+        <span className={`tag ${e.source}`}>{e.source}</span>
+      </td>
+      <td>
+        {e.rows.length === 0 ? (
+          <span className="muted">—</span>
+        ) : (
+          e.rows.map((r) => (
+            <span className="chip" key={`${r.scope}-${r.kind}`} title={`${r.label} (${r.scope})`}>
+              {r.scope !== 'merged' ? `${r.scope}·` : ''}
+              {r.label}
+              <b>
+                {r.v !== null
+                  ? fmtChartValue(r.v, r.kind === 'balance' || r.kind === 'spend' ? 'absolute' : 'percent', r.unit)
+                  : '—'}
+              </b>
+            </span>
+          ))
+        )}
+      </td>
+      <td className="note">
+        {e.errKind === 'error'
+          ? e.errText
+          : e.errKind === 'not_configured'
+            ? 'not configured'
+            : e.stale
+              ? 'cached (live fetch failed)'
+              : e.errScopes.length
+                ? // Name the accounts: a merged card that lost a member looks
+                  // like a usage drop otherwise.
+                  `account ${e.errScopes.join(', ')} failed — excluded from the merge`
+                : e.partial
+                  ? 'partial — an account failed'
+                  : e.planLabel || planSummary(e)}
+      </td>
+    </tr>
   );
 }
