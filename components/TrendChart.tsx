@@ -18,7 +18,9 @@ export const CHART_W = 600;
 export const CHART_H = 150;
 const PAD_TOP = 12;
 const PAD_BOTTOM = 20;
-const PAD_X = 8;
+/** Left gutter so the value labels never sit on top of the line. */
+const PAD_LEFT = 46;
+const PAD_RIGHT = 10;
 
 interface Props {
   series: HistorySeries;
@@ -69,14 +71,14 @@ export default function TrendChart({ series, from, to }: Props) {
     const [lo, hi] = yExtent(values, series.mode);
     const decimals = axisDecimals(hi - lo);
     const inner = CHART_H - PAD_TOP - PAD_BOTTOM;
-    const geo = sparkGeometry(points, CHART_W - PAD_X * 2, inner, { pad: 4, xDomain: domain });
+    const geo = sparkGeometry(points, CHART_W - PAD_LEFT - PAD_RIGHT, inner, { pad: 4, xDomain: domain });
     const area = geo.segments
       .filter((sg) => sg.length > 1)
       .map(
         (sg) =>
-          `${sg.map((p, i) => `${i ? 'L' : 'M'}${p.x + PAD_X},${p.y}`).join(' ')} L${sg[sg.length - 1].x + PAD_X},${
-            inner + PAD_TOP
-          } L${sg[0].x + PAD_X},${inner + PAD_TOP} Z`,
+          `${sg.map((p, i) => `${i ? 'L' : 'M'}${p.x + PAD_LEFT},${p.y + PAD_TOP}`).join(' ')} L${
+            sg[sg.length - 1].x + PAD_LEFT
+          },${PAD_TOP + inner} L${sg[0].x + PAD_LEFT},${PAD_TOP + inner} Z`,
       );
     return { geo, area, lo, hi, decimals, inner, domain };
   }, [points, series.mode, from, to]);
@@ -99,7 +101,7 @@ export default function TrendChart({ series, from, to }: Props) {
   const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width === 0) return;
-    const x = ((e.clientX - rect.left) / rect.width) * CHART_W - PAD_X;
+    const x = ((e.clientX - rect.left) / rect.width) * CHART_W - PAD_LEFT;
     setHover(nearestIndex(geo.segments.flat(), x));
   };
   const flat = geo.segments.flat();
@@ -119,7 +121,14 @@ export default function TrendChart({ series, from, to }: Props) {
       >
         {gridVals.map((v, i) => (
           <g key={i}>
-            <line x1={0} x2={CHART_W} y1={yOf(v)} y2={yOf(v)} className="chart-grid" vectorEffect="non-scaling-stroke" />
+            <line
+              x1={PAD_LEFT}
+              x2={CHART_W - PAD_RIGHT}
+              y1={yOf(v)}
+              y2={yOf(v)}
+              className="chart-grid"
+              vectorEffect="non-scaling-stroke"
+            />
             <text x={2} y={yOf(v) - 3} className="chart-axis" vectorEffect="non-scaling-stroke">
               {fmtChartValue(v, series.mode, series.unit, decimals)}
             </text>
@@ -132,8 +141,8 @@ export default function TrendChart({ series, from, to }: Props) {
         {geo.resets.map((rx, i) => (
           <line
             key={`r${i}`}
-            x1={rx + PAD_X}
-            x2={rx + PAD_X}
+            x1={rx + PAD_LEFT}
+            x2={rx + PAD_LEFT}
             y1={PAD_TOP}
             y2={PAD_TOP + inner}
             className="chart-reset"
@@ -148,30 +157,30 @@ export default function TrendChart({ series, from, to }: Props) {
             points themselves and say so, instead of a degenerate stroke. */}
         {points.length < 3 &&
           geo.segments.flat().map((p, i) => (
-            <circle key={i} cx={p.x + PAD_X} cy={p.y + PAD_TOP} r={2.4} className="chart-dot" />
+            <circle key={i} cx={p.x + PAD_LEFT} cy={p.y + PAD_TOP} r={2.4} className="chart-dot" />
           ))}
 
         {at && (
           <g className="chart-hover">
             <line
-              x1={at.x + PAD_X}
-              x2={at.x + PAD_X}
+              x1={at.x + PAD_LEFT}
+              x2={at.x + PAD_LEFT}
               y1={PAD_TOP}
               y2={PAD_TOP + inner}
               className="chart-crosshair"
               vectorEffect="non-scaling-stroke"
             />
-            <circle cx={at.x + PAD_X} cy={at.y + PAD_TOP} r={3.4} className="chart-hover-dot" />
+            <circle cx={at.x + PAD_LEFT} cy={at.y + PAD_TOP} r={3.4} className="chart-hover-dot" />
           </g>
         )}
 
         {geo.end && hover === null && (
           <>
-            <circle cx={geo.end.x + PAD_X} cy={geo.end.y + PAD_TOP} r={2.6} className="chart-end" />
+            <circle cx={geo.end.x + PAD_LEFT} cy={geo.end.y + PAD_TOP} r={2.6} className="chart-end" />
             <text
-              x={geo.end.x > CHART_W - 60 ? geo.end.x - 6 : geo.end.x + 6}
+              x={geo.end.x + PAD_LEFT > CHART_W - 70 ? geo.end.x + PAD_LEFT - 6 : geo.end.x + PAD_LEFT + 6}
               y={Math.max(PAD_TOP + 8, geo.end.y + PAD_TOP - 6)}
-              className={`chart-last${geo.end.x > CHART_W - 60 ? ' flip' : ''}`}
+              className={`chart-last${geo.end.x + PAD_LEFT > CHART_W - 70 ? ' flip' : ''}`}
               vectorEffect="non-scaling-stroke"
             >
               {fmtChartValue(last.v, series.mode, series.unit, decimals)}
@@ -194,7 +203,7 @@ export default function TrendChart({ series, from, to }: Props) {
         <div
           className="chart-tip"
           style={{
-            left: `${((at.x + PAD_X) / CHART_W) * 100}%`,
+            left: `${((at.x + PAD_LEFT) / CHART_W) * 100}%`,
             top: `${((at.y + PAD_TOP) / CHART_H) * 100}%`,
           }}
         >
