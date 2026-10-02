@@ -70,6 +70,8 @@ export default function HistoryPage() {
   // there, so a multi-account card never hides its accounts behind a checkbox.
   const [scope, setScope] = useState('merged');
   const [data, setData] = useState<HistoryResponse | null>(null);
+  // 只看重置的开关：列表只保留含重置的行，且不再折叠。
+  const [onlyResets, setOnlyResets] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -125,6 +127,17 @@ export default function HistoryPage() {
   // The log is 5-minute samples: a day of idle usage is ~290 identical rows, so
   // runs are folded to their first and last with a marker in between.
   const logItems = useMemo(() => foldLog(log), [log]);
+  const resetCount = useMemo(
+    () => log.reduce((n, e) => n + e.rows.filter((r) => r.reset).length, 0),
+    [log],
+  );
+  // 筛选模式：只保留含重置的行，原始顺序、不折叠（重置本来就稀疏）。
+  const displayItems = useMemo(() => {
+    if (!onlyResets) return logItems;
+    return log
+      .filter((e) => e.rows.some((r) => r.reset))
+      .map((entry) => ({ type: 'entry' as const, entry }));
+  }, [onlyResets, logItems, log]);
   const hidden = logItems.filter((i) => i.type === 'fold').reduce((n, i) => n + (i.count ?? 0), 0);
 
   const series = useMemo(
@@ -292,6 +305,24 @@ export default function HistoryPage() {
                 <span className="label">Refresh log</span>
               </span>
               <span className="head-right">
+                {resetCount > 0 && (
+                  <span className="seg" role="tablist" aria-label="Filter">
+                    <button
+                      className={onlyResets ? '' : 'on'}
+                      onClick={() => setOnlyResets(false)}
+                      title="Show every read"
+                    >
+                      全部
+                    </button>
+                    <button
+                      className={onlyResets ? 'on' : ''}
+                      onClick={() => setOnlyResets(true)}
+                      title="Show only window resets"
+                    >
+                      ↻ ×{resetCount}
+                    </button>
+                  </span>
+                )}
                 <span className="tag">what each read saw</span>
               </span>
             </div>
@@ -305,7 +336,7 @@ export default function HistoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {logItems.map((item, i) =>
+                {displayItems.map((item, i) =>
                   item.type === 'fold' ? (
                     <tr key={`fold${i}`} className="fold">
                       <td colSpan={4}>
@@ -348,7 +379,15 @@ function LogRow({ e }: { e: HistoryLogEntry }) {
           <span className="muted">—</span>
         ) : (
           e.rows.map((r) => (
-            <span className="chip" key={`${r.scope}-${r.kind}`} title={`${r.label} (${r.scope})`}>
+            <span
+              className={`chip${r.reset ? ' reset' : ''}`}
+              key={`${r.scope}-${r.kind}`}
+              title={
+                r.reset
+                  ? `窗口重置${r.resetFrom !== null && r.resetFrom !== undefined ? ` · ${r.resetFrom}% → ${r.v ?? '—'}%` : ''}`
+                  : `${r.label} (${r.scope})`
+              }
+            >
               {r.scope !== 'merged' ? `${r.scope}·` : ''}
               {r.label}
               <b>
@@ -356,6 +395,7 @@ function LogRow({ e }: { e: HistoryLogEntry }) {
                   ? fmtChartValue(r.v, r.kind === 'balance' || r.kind === 'spend' ? 'absolute' : 'percent', r.unit)
                   : '—'}
               </b>
+              {r.reset && <i className="reset-mark">↻</i>}
             </span>
           ))
         )}

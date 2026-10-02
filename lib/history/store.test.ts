@@ -699,3 +699,52 @@ describe('per-account provenance on a sample', () => {
     expect(rows[0].planLabels).toEqual([{ key: '1', label: 'Allegro' }]);
   });
 });
+
+describe('window resets in the refresh log', () => {
+  const T0 = 1_700_000_000_000;
+  const FIVE_H = 5 * 3600e3;
+  // GLM 的 5h 窗口：时钟每 5 小时跳一次。第一、二条在同一窗口，第三条进入新窗口。
+  const reads = [
+    { ts: T0, pct: 40, resetAt: T0 + 4 * 3600e3 },
+    { ts: T0 + 300_000, pct: 55, resetAt: T0 + 4 * 3600e3 },
+    { ts: T0 + 600_000, pct: 2, resetAt: T0 + 9 * 3600e3 },
+  ];
+
+  it('marks the first reading of each new window, with the pre-reset value', () => {
+    for (const r of reads) {
+      record(
+        extractSample(result({ summary: { limits: [lim({ kind: '5h', percent: r.pct, resetAt: new Date(r.resetAt).toISOString() })] } }), 'poll', r.ts),
+        r.ts,
+      );
+    }
+    const h = buildProviderHistory({ provider: 'claude', from: T0 - 1, to: T0 + 600_001, now: T0 + 600_001 });
+    // log 是最新在前：[98%无, 55%无, 40%无] → 只有最新那条（新窗口的第一条）带 reset
+    const marks = h.log.map((e) => e.rows[0]);
+    expect(marks[0].reset).toBe(true);
+    expect(marks[0].resetFrom).toBe(55);
+    expect(marks[1].reset).toBeUndefined();
+    expect(marks[2].reset).toBeUndefined();
+  });
+
+  it('per-account rows get their own reset marks', () => {
+    const wk = T0 + 3 * 864e5;
+    const mk = (a1: number, a2: number, a2Reset: number, ts: number) =>
+      result({ provider: 'kimi', summary: {
+        limits: [lim({ kind: 'weekly', percent: Math.round((a1 + a2) / 2) })],
+        accounts: [
+          { key: '1', ok: true, limits: [lim({ kind: 'weekly', percent: a1, resetAt: new Date(wk).toISOString() })] },
+          { key: '2', ok: true, limits: [lim({ kind: 'weekly', percent: a2, resetAt: new Date(a2Reset).toISOString() })] },
+        ],
+      } });
+    record(extractSample(mk(16, 13, wk, T0), 'poll', T0), T0);
+    record(extractSample(mk(17, 1, wk + 7 * 864e5, T0 + 300_000), 'poll', T0 + 300_000), T0 + 300_000);
+    const h = buildProviderHistory({ provider: 'kimi', from: T0 - 1, to: T0 + 300_001, includeAccounts: true, now: T0 + 300_001 });
+    const newest = h.log[0];
+    const acc2 = newest.rows.find((r) => r.scope === '2');
+    const acc1 = newest.rows.find((r) => r.scope === '1');
+    // 只有账号 2 的时钟跳了 → 只有它的芯片标 reset
+    expect(acc2?.reset).toBe(true);
+    expect(acc2?.resetFrom).toBe(13);
+    expect(acc1?.reset).toBeUndefined();
+  });
+});

@@ -896,6 +896,21 @@ main.history {
   stroke: none;
 }
 
+/* Window-reset marker on a log chip */
+.card.log .chip.reset {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--text);
+}
+.card.log .chip .reset-mark {
+  margin-left: 4px;
+  color: var(--accent);
+  font-style: normal;
+  font-size: 10px;
+}
+:root[data-theme='c'] .card.log .chip .reset-mark {
+  color: var(--text);
+}
+
 /* Folded runs in the refresh log */
 .card.log tr.fold td {
   border-bottom: none;

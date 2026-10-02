@@ -105,6 +105,10 @@ export interface HistoryLogRow {
   u: number | null;
   n: number | null;
   unit: string | null;
+  /** This reading is the first of a new window (its reset clock just moved). */
+  reset?: boolean;
+  /** The value just before the reset, for "98% → 0%" in the tooltip. */
+  resetFrom?: number | null;
 }
 
 /** One fetch = one row in the "what did each refresh see" table. */
@@ -358,9 +362,15 @@ export interface HistoryOptions {
 
 function logFrom(samples: readonly StoredSample[], rows: readonly StoredRow[]): HistoryLogEntry[] {
   const bySample = new Map<number, HistoryLogRow[]>();
+  // Rows arrive oldest-first; track each series' previous reset clock so the
+  // row that opens a new window can be marked. A rollover is the reset clock
+  // jumping, never a plain drop in value.
+  const prevBySeries = new Map<string, { resetAt: number | null; v: number | null }>();
   for (const r of rows) {
     const v = valueOf(r, rowMode(r.kind));
-    const list = bySample.get(r.sampleId);
+    const key = `${r.scope}:${r.kind}`;
+    const prev = prevBySeries.get(key);
+    const isReset = prev !== undefined && isRollover(prev.resetAt, r.resetAt);
     const entry: HistoryLogRow = {
       scope: r.scope,
       kind: r.kind,
@@ -369,7 +379,12 @@ function logFrom(samples: readonly StoredSample[], rows: readonly StoredRow[]): 
       u: r.used,
       n: r.total,
       unit: r.unit,
+      ...(isReset
+        ? { reset: true, resetFrom: prev.v === null ? null : Math.round(prev.v * 100) / 100 }
+        : {}),
     };
+    prevBySeries.set(key, { resetAt: r.resetAt, v });
+    const list = bySample.get(r.sampleId);
     if (list) list.push(entry);
     else bySample.set(r.sampleId, [entry]);
   }
