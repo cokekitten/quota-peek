@@ -34,7 +34,14 @@ export type LogItem<T> =
   | { type: 'entry'; entry: T }
   | { type: 'fold'; count: number; from: number; to: number };
 
-/** Two reads count as identical only if nothing observable differs. */
+/**
+ * Two reads are identical when the log *shows* the same thing: same outcome,
+ * same account set, same displayed value per row.
+ *
+ * The absolute used/total counters are deliberately not compared — a counter
+ * that ticks up while the percentage stays at 1% is still the same reading to
+ * the eye, and comparing them is what kept runs from ever folding.
+ */
 export function sameReadings(a: FoldableEntry, b: FoldableEntry): boolean {
   if (a.ok !== b.ok) return false;
   if (a.errKind !== b.errKind) return false;
@@ -42,7 +49,7 @@ export function sameReadings(a: FoldableEntry, b: FoldableEntry): boolean {
   if (a.rows.length !== b.rows.length) return false;
   return a.rows.every((r, i) => {
     const o = b.rows[i];
-    return r.scope === o.scope && r.kind === o.kind && r.v === o.v && r.u === o.u;
+    return r.scope === o.scope && r.kind === o.kind && r.v === o.v;
   });
 }
 

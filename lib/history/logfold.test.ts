@@ -32,6 +32,16 @@ describe('folding identical reads', () => {
     expect(foldLog(log(2)).map((i) => i.type)).toEqual(['entry', 'entry']);
   });
 
+  it('folds when only the absolute counter ticked up, not the displayed value', () => {
+    // The real case: used climbs every poll while the percentage stays at 1%.
+    // Comparing `u` kept runs from ever folding.
+    const a = at(T);
+    const b = { ...at(T - 300_000), rows: a.rows.map((r) => ({ ...r, u: 125 })) };
+    const c = { ...at(T - 600_000), rows: a.rows.map((r) => ({ ...r, u: 250 })) };
+    expect(sameReadings(a, b)).toBe(true);
+    expect(foldLog([a, b, c]).map((i) => i.type)).toEqual(['entry', 'fold', 'entry']);
+  });
+
   it('breaks a run on a changed reading', () => {
     const mixed = [...log(2), at(T - 600_000, { rows: [{ scope: 'merged', kind: '5h', v: 2, u: null }] }), ...log(2)];
     const items = foldLog(mixed);

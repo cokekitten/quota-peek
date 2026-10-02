@@ -76,9 +76,9 @@ export default function TrendChart({ series, from, to }: Props) {
       .filter((sg) => sg.length > 1)
       .map(
         (sg) =>
-          `${sg.map((p, i) => `${i ? 'L' : 'M'}${p.x + PAD_LEFT},${p.y + PAD_TOP}`).join(' ')} L${
-            sg[sg.length - 1].x + PAD_LEFT
-          },${PAD_TOP + inner} L${sg[0].x + PAD_LEFT},${PAD_TOP + inner} Z`,
+          `${sg.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join(' ')} L${sg[sg.length - 1].x},${inner} L${
+            sg[0].x
+          },${inner} Z`,
       );
     return { geo, area, lo, hi, decimals, inner, domain };
   }, [points, series.mode, from, to]);
@@ -135,58 +135,63 @@ export default function TrendChart({ series, from, to }: Props) {
           </g>
         ))}
 
-        {area.map((d, i) => (
-          <path key={`a${i}`} d={d} className="chart-area" />
-        ))}
-        {geo.resets.map((rx, i) => (
-          <line
-            key={`r${i}`}
-            x1={rx + PAD_LEFT}
-            x2={rx + PAD_LEFT}
-            y1={PAD_TOP}
-            y2={PAD_TOP + inner}
-            className="chart-reset"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {geo.paths.map((d, i) => (
-          <path key={i} d={d} className="chart-line" vectorEffect="non-scaling-stroke" />
-        ))}
-
-        {/* Two or three readings can't make a line worth looking at — show the
-            points themselves and say so, instead of a degenerate stroke. */}
-        {points.length < 3 &&
-          geo.segments.flat().map((p, i) => (
-            <circle key={i} cx={p.x + PAD_LEFT} cy={p.y + PAD_TOP} r={2.4} className="chart-dot" />
+        {/* Every data mark shares one origin: the line, the fill, the reset
+            rules and the dots are drawn in the plot box, and the group shifts
+            them into the gutter-free canvas in one step. */}
+        <g transform={`translate(${PAD_LEFT} ${PAD_TOP})`}>
+          {area.map((d, i) => (
+            <path key={`a${i}`} d={d} className="chart-area" />
           ))}
-
-        {at && (
-          <g className="chart-hover">
+          {geo.resets.map((rx, i) => (
             <line
-              x1={at.x + PAD_LEFT}
-              x2={at.x + PAD_LEFT}
-              y1={PAD_TOP}
-              y2={PAD_TOP + inner}
-              className="chart-crosshair"
+              key={`r${i}`}
+              x1={rx}
+              x2={rx}
+              y1={0}
+              y2={inner}
+              className="chart-reset"
               vectorEffect="non-scaling-stroke"
             />
-            <circle cx={at.x + PAD_LEFT} cy={at.y + PAD_TOP} r={3.4} className="chart-hover-dot" />
-          </g>
-        )}
+          ))}
+          {geo.paths.map((d, i) => (
+            <path key={i} d={d} className="chart-line" vectorEffect="non-scaling-stroke" />
+          ))}
 
-        {geo.end && hover === null && (
-          <>
-            <circle cx={geo.end.x + PAD_LEFT} cy={geo.end.y + PAD_TOP} r={2.6} className="chart-end" />
-            <text
-              x={geo.end.x + PAD_LEFT > CHART_W - 70 ? geo.end.x + PAD_LEFT - 6 : geo.end.x + PAD_LEFT + 6}
-              y={Math.max(PAD_TOP + 8, geo.end.y + PAD_TOP - 6)}
-              className={`chart-last${geo.end.x + PAD_LEFT > CHART_W - 70 ? ' flip' : ''}`}
-              vectorEffect="non-scaling-stroke"
-            >
-              {fmtChartValue(last.v, series.mode, series.unit, decimals)}
-            </text>
-          </>
-        )}
+          {/* Two or three readings can't make a line worth looking at — show the
+              points themselves instead of a degenerate stroke. */}
+          {points.length < 3 &&
+            geo.segments.flat().map((p, i) => (
+              <circle key={i} cx={p.x} cy={p.y} r={2.4} className="chart-dot" />
+            ))}
+
+          {at && (
+            <g className="chart-hover">
+              <line
+                x1={at.x}
+                x2={at.x}
+                y1={0}
+                y2={inner}
+                className="chart-crosshair"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle cx={at.x} cy={at.y} r={3.4} className="chart-hover-dot" />
+            </g>
+          )}
+
+          {geo.end && hover === null && (
+            <>
+              <circle cx={geo.end.x} cy={geo.end.y} r={2.6} className="chart-end" />
+              <text
+                x={geo.end.x > CHART_W - PAD_LEFT - 70 ? geo.end.x - 6 : geo.end.x + 6}
+                y={Math.max(8, geo.end.y - 6)}
+                className={`chart-last${geo.end.x > CHART_W - PAD_LEFT - 70 ? ' flip' : ''}`}
+                vectorEffect="non-scaling-stroke"
+              >
+                {fmtChartValue(last.v, series.mode, series.unit, decimals)}
+              </text>
+            </>
+          )}
+        </g>
 
         <text x={2} y={CHART_H - 5} className="chart-axis" vectorEffect="non-scaling-stroke">
           {timeFmt(domain[0])}
