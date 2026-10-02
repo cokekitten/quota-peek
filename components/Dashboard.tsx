@@ -45,9 +45,11 @@ export default function Dashboard({ providers, initialConfigured }: Props) {
   const lastRefreshAt = useRef<number>(Date.now());
 
   // Restore the saved theme on mount (layout.tsx sets the pre-paint default).
+  // ?theme=a|c in the URL overrides it — useful for screenshots and QA.
   useEffect(() => {
     try {
-      const t = localStorage.getItem('qp-theme') === 'c' ? 'c' : 'a';
+      const q = new URLSearchParams(window.location.search).get('theme');
+      const t = q === 'c' || q === 'a' ? q : localStorage.getItem('qp-theme') === 'c' ? 'c' : 'a';
       setTheme(t);
       document.documentElement.dataset.theme = t;
       if (localStorage.getItem(SHOW_UNCONFIGURED_KEY) !== null) {
