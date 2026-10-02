@@ -71,7 +71,12 @@ export default function TrendChart({ series, from, to }: Props) {
     const [lo, hi] = yExtent(values, series.mode);
     const decimals = axisDecimals(hi - lo);
     const inner = CHART_H - PAD_TOP - PAD_BOTTOM;
-    const geo = sparkGeometry(points, CHART_W - PAD_LEFT - PAD_RIGHT, inner, { pad: 4, xDomain: domain });
+    const geo = sparkGeometry(points, CHART_W - PAD_LEFT - PAD_RIGHT, inner, {
+      pad: 4,
+      xDomain: domain,
+      // The grid and the line must agree where 5% is — see spark.ts.
+      yDomain: [lo, hi],
+    });
     const area = geo.segments
       .filter((sg) => sg.length > 1)
       .map(

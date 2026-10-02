@@ -54,6 +54,13 @@ export interface SparkGeometryOptions {
   pad?: number;
   /** Force the time domain (e.g. to align several charts on one window). */
   xDomain?: [number, number];
+  /**
+   * Force the value domain. Without it the geometry scales to the data's own
+   * min/max — which is exactly what made a 1% line sit where the 10% gridline
+   * is drawn, while the axis said 10%: the line and the grid were on two
+   * different scales. Callers that draw an axis must pass one.
+   */
+  yDomain?: [number, number];
 }
 
 /**
@@ -64,13 +71,13 @@ export function sparkGeometry(
   points: readonly SparkPoint[],
   width = 100,
   height = 20,
-  { pad = 1.5, xDomain }: SparkGeometryOptions = {},
+  { pad = 1.5, xDomain, yDomain }: SparkGeometryOptions = {},
 ): SparkGeometry {
   const usable = points.filter((p) => Number.isFinite(p.v));
   if (usable.length === 0) return { segments: [], paths: [], resets: [], yRange: [0, 0], count: 0 };
   const vs = usable.map((p) => p.v);
-  const min = Math.min(...vs);
-  const max = Math.max(...vs);
+  const min = yDomain ? yDomain[0] : Math.min(...vs);
+  const max = yDomain ? yDomain[1] : Math.max(...vs);
   const span = max - min;
   const t0 = xDomain ? xDomain[0] : usable[0].t;
   const tSpan = (xDomain ? xDomain[1] : usable[usable.length - 1].t) - t0;
