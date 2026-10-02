@@ -18,7 +18,25 @@ export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
   if (process.env.QP_POLL === '0') return;
   if (process.env.NODE_ENV === 'test') return;
-  void handoff();
+  // Hand the lease back on the way out. The poller's identity is the container
+  // id, so a recreate otherwise leaves the successor waiting out the whole TTL
+  // — a silent sampling gap after every deploy. SIGKILL still has to wait, but
+  // that is bounded by the lease, not by the deploy.
+  let poller: { stopPoller: () => void } | null = null;
+  const release = () => poller?.stopPoller();
+  for (const signal of ['SIGTERM', 'SIGINT', 'beforeExit'] as const) {
+    process.on(signal, release);
+  }
+  void handoff()
+    .catch(() => undefined)
+    .then(() => import('./lib/history/poller'))
+    .then((m) => {
+      poller = m;
+      // The route handlers also call ensurePoller(); this makes a boot with no
+      // page view sample on its own.
+      m.startPoller();
+    })
+    .catch(() => undefined);
 }
 
 async function handoff(): Promise<void> {

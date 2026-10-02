@@ -253,8 +253,8 @@ export function closeDb(): void {
   }
 }
 
-/** Default lease lifetime: two sampling intervals, so a slow round can't lose it. */
-export const DEFAULT_LEASE_MS = 10 * 60_000;
+/** Floor for the lease lifetime — see poller.leaseTtlMs for the reasoning. */
+export const MIN_LEASE_MS = 2 * 60_000;
 
 export interface LeaseState {
   owner: string;
@@ -278,7 +278,7 @@ export function ownerId(): string {
  */
 export function acquireLease(
   owner: string,
-  ttlMs: number = DEFAULT_LEASE_MS,
+  ttlMs: number = MIN_LEASE_MS,
   now: number = Date.now(),
 ): boolean {
   const db = getDb();

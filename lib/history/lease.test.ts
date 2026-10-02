@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { acquireLease, closeDb, leaseState, releaseLease } from './db';
-import { pollOnce, resetPoller, stopPoller } from './poller';
+import { leaseTtlMs, pollOnce, resetPoller, stopPoller } from './poller';
 import { sampleCount } from './store';
 import type { ProviderKey, ProviderResult } from '../providers/types';
 
@@ -127,5 +127,27 @@ describe('a long-lived connection sees another replica', () => {
 
     expect(leaseState()?.owner).toBe('foreign:9');
     expect(acquireLease('self:1')).toBe(false);
+  });
+});
+
+describe('lease lifetime', () => {
+  it('outlasts the gap between rounds but is no longer than it needs to be', () => {
+    // Longer than the interval, or the owner would let it lapse between ticks
+    // and a second replica could take over mid-cycle…
+    expect(leaseTtlMs(300_000)).toBeGreaterThan(300_000);
+    // …and short enough that a crashed owner does not block anyone for long.
+    expect(leaseTtlMs(300_000)).toBeLessThanOrEqual(2 * 300_000);
+    // A very short interval still gets a sane floor.
+    expect(leaseTtlMs(60_000)).toBeGreaterThanOrEqual(120_000);
+  });
+
+  it('is overridable for operators who want a different trade-off', () => {
+    process.env.QP_POLL_LEASE_MS = '900000';
+    try {
+      // leaseTtlMs reads the env per call, so no re-import is needed.
+      expect(leaseTtlMs(300_000)).toBe(900000);
+    } finally {
+      delete process.env.QP_POLL_LEASE_MS;
+    }
   });
 });

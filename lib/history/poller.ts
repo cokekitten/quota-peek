@@ -16,7 +16,7 @@
  */
 
 import os from 'node:os';
-import { acquireLease, DEFAULT_LEASE_MS, leaseState, ownerId, releaseLease } from './db';
+import { acquireLease, MIN_LEASE_MS, leaseState, ownerId, releaseLease } from './db';
 import { PROVIDERS, PROVIDER_KEYS } from '../providers';
 import type { ProviderKey, ProviderResult } from '../providers/types';
 import { extractSample } from './extract';
@@ -139,10 +139,18 @@ export async function pollOnce(opts: PollOptions = {}): Promise<PollSummary> {
   return { at: started, tookMs: Date.now() - started, providers, pruned };
 }
 
-/** Lease lifetime: long enough to cover a slow round plus a missed tick. */
+/**
+ * Lease lifetime: one interval plus a minute of slack.
+ *
+ * It has to outlast the gap between rounds, or the owner would let the lease
+ * lapse between two ticks and a second replica could take over. It should be
+ * as short as possible after that, because it is exactly how long a crashed
+ * owner blocks the others. A graceful stop hands the lease back immediately,
+ * so this only bounds the *hard* failure case.
+ */
 export function leaseTtlMs(intervalMs: number = pollIntervalMs()): number {
   const n = Number(process.env.QP_POLL_LEASE_MS);
-  return Number.isFinite(n) && n > 0 ? n : Math.max(DEFAULT_LEASE_MS, 2 * intervalMs);
+  return Number.isFinite(n) && n > 0 ? n : Math.max(MIN_LEASE_MS, intervalMs + 60_000);
 }
 
 const REGISTRY = Symbol.for('quota-peek.poller');
