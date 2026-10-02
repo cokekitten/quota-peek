@@ -340,9 +340,11 @@ export default function HistoryPage() {
                   item.type === 'fold' ? (
                     <tr key={`fold${i}`} className="fold">
                       <td colSpan={4}>
-                        <span className="fold-note">
-                          ⋯ {item.count} more identical read{item.count === 1 ? '' : 's'} ·{' '}
-                          {fmtClock(item.from)} → {fmtClock(item.to)}
+                        <span className="fold-row">
+                          <span className="fold-line" />
+                          <span className="fold-note">
+                            ⋯ {item.count} 条相同读数 · {fmtClock(item.from)} → {fmtClock(item.to)}
+                          </span>
                         </span>
                       </td>
                     </tr>
@@ -368,6 +370,7 @@ export default function HistoryPage() {
 
 /** One read in the refresh log. */
 function LogRow({ e }: { e: HistoryLogEntry }) {
+  const multi = e.rows.some((r) => r.scope !== 'merged');
   return (
     <tr className={e.ok ? '' : 'bad'}>
       <td className="mono">{fmtStamp(e.ts)}</td>
@@ -377,27 +380,10 @@ function LogRow({ e }: { e: HistoryLogEntry }) {
       <td>
         {e.rows.length === 0 ? (
           <span className="muted">—</span>
+        ) : multi ? (
+          <ReadingGrid rows={e.rows} />
         ) : (
-          e.rows.map((r) => (
-            <span
-              className={`chip${r.reset ? ' reset' : ''}`}
-              key={`${r.scope}-${r.kind}`}
-              title={
-                r.reset
-                  ? `窗口重置${r.resetFrom !== null && r.resetFrom !== undefined ? ` · ${r.resetFrom}% → ${r.v ?? '—'}%` : ''}`
-                  : `${r.label} (${r.scope})`
-              }
-            >
-              {r.scope !== 'merged' ? `${r.scope}·` : ''}
-              {r.label}
-              <b>
-                {r.v !== null
-                  ? fmtChartValue(r.v, r.kind === 'balance' || r.kind === 'spend' ? 'absolute' : 'percent', r.unit)
-                  : '—'}
-              </b>
-              {r.reset && <i className="reset-mark">↻</i>}
-            </span>
-          ))
+          e.rows.map((r) => <ReadingChip key={`${r.scope}-${r.kind}`} r={r} />)
         )}
       </td>
       <td className="note">
@@ -408,13 +394,70 @@ function LogRow({ e }: { e: HistoryLogEntry }) {
             : e.stale
               ? 'cached (live fetch failed)'
               : e.errScopes.length
-                ? // Name the accounts: a merged card that lost a member looks
-                  // like a usage drop otherwise.
-                  `account ${e.errScopes.join(', ')} failed — excluded from the merge`
+                ? `account ${e.errScopes.join(', ')} failed — excluded from the merge`
                 : e.partial
                   ? 'partial — an account failed'
                   : e.planLabel || planSummary(e)}
       </td>
     </tr>
+  );
+}
+
+/**
+ * Multi-account readings, one line per window: the window's label, the merged
+ * value, then each account's value — so the columns read "5h: Σ0% · 1:0% ·
+ * 2:0%" instead of a pile of chips where nobody can tell which account is
+ * which.
+ */
+function ReadingGrid({ rows }: { rows: HistoryLogEntry['rows'] }) {
+  const byKind = new Map<string, HistoryLogEntry['rows']>();
+  for (const r of rows) {
+    const list = byKind.get(r.kind);
+    if (list) list.push(r);
+    else byKind.set(r.kind, [r]);
+  }
+  return (
+    <div className="rw-grid">
+      {[...byKind.entries()].map(([kind, list]) => {
+        const merged = list.find((r) => r.scope === 'merged');
+        const accounts = list
+          .filter((r) => r.scope !== 'merged')
+          .sort((a, b) => a.scope.localeCompare(b.scope, 'en', { numeric: true }));
+        return (
+          <div className="rw-line" key={kind}>
+            <span className="rw-label" title={kind}>
+              {merged?.label ?? kind}
+            </span>
+            {merged ? <ReadingChip r={merged} /> : null}
+            {accounts.map((r) => (
+              <ReadingChip key={r.scope} r={r} acc />
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** One reading chip; `acc` shows the account number in front of the value. */
+function ReadingChip({ r, acc }: { r: HistoryLogEntry['rows'][number]; acc?: boolean }) {
+  return (
+    <span
+      className={`chip${r.reset ? ' reset' : ''}`}
+      title={
+        r.reset
+          ? `窗口重置${r.resetFrom !== null && r.resetFrom !== undefined ? ` · ${r.resetFrom}% → ${r.v ?? '—'}%` : ''}`
+          : `${r.label} (${r.scope})`
+      }
+    >
+      {acc && <span className="acc-no">{r.scope}</span>}
+      {!acc && r.scope !== 'merged' && `${r.scope}·`}
+      <b>
+        {r.v !== null
+          ? fmtChartValue(r.v, r.kind === 'balance' || r.kind === 'spend' ? 'absolute' : 'percent', r.unit)
+          : '—'}
+      </b>
+      {r.reset && <i className="reset-mark">↻</i>}
+    </span>
   );
 }

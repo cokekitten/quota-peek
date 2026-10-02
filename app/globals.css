@@ -927,3 +927,55 @@ main.history {
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
 }
+
+/* Multi-account readings: one aligned line per window */
+.rw-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rw-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rw-label {
+  flex: 0 0 84px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card.log .chip .acc-no {
+  margin-right: 4px;
+  color: var(--accent-2);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Fold marker: a quiet divider, not a banner */
+.card.log tr.fold td {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.card.log .fold-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card.log .fold-line {
+  flex: 1;
+  border-top: 1px dashed var(--border);
+}
+.card.log .fold-note {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
