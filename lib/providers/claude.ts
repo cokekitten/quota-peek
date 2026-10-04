@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { ProviderResult, UsageLimit } from './types';
@@ -19,12 +19,16 @@ const STALE_TTL_MS = 5 * 60_000; // serve last-good on error for up to 5 min
 let cache: { result: ProviderResult; ts: number } | null = null;
 
 /**
- * Configured = the Claude Code credentials file is there. A custom
- * ANTHROPIC_BASE_URL (which disables the OAuth usage API) still counts as
+ * Configured = the Claude Code credentials file is there and is a regular file.
+ * A custom ANTHROPIC_BASE_URL (which disables the OAuth usage API) still counts as
  * configured — that's a broken setup, not a missing one, so its card stays.
  */
 export function isConfigured(credsPath: string = CREDENTIALS_PATH): boolean {
-  return existsSync(credsPath);
+  try {
+    return existsSync(credsPath) && statSync(credsPath).isFile();
+  } catch {
+    return false;
+  }
 }
 
 interface Credentials {

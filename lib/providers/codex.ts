@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { ProviderResult, UsageLimit } from './types';
@@ -22,9 +22,13 @@ interface CodexWindow {
   reset_at?: number; // seconds
 }
 
-/** Configured = the Codex CLI's auth.json exists where we expect it. */
+/** Configured = the Codex CLI's auth.json exists where we expect it and is a regular file. */
 export function isConfigured(authPath: string = AUTH_PATH): boolean {
-  return existsSync(authPath);
+  try {
+    return existsSync(authPath) && statSync(authPath).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /**

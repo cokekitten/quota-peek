@@ -3,6 +3,7 @@
 
 export type ProviderKey =
   | 'claude'
+  | 'gemini'
   | 'codex'
   | 'glm'
   | 'supergrok'
@@ -63,6 +64,7 @@ export type ConfiguredMap = Record<ProviderKey, boolean>;
 
 export const PROVIDER_LABELS: Record<ProviderKey, string> = {
   claude: 'Claude Code',
+  gemini: 'Gemini',
   codex: 'Codex',
   glm: 'GLM',
   supergrok: 'SuperGrok',
@@ -80,6 +82,7 @@ export const PROVIDER_ORDER: ProviderKey[] = [
   'claude',
   'kimi',
   'codex',
+  'gemini',
   'deepseek',
   'mimo',
   'glm',

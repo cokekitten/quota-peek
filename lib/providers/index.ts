@@ -1,4 +1,5 @@
 import { fetchClaudeUsage, isConfigured as claudeConfigured } from './claude';
+import { fetchGeminiUsage, isConfigured as geminiConfigured } from './gemini';
 import { fetchCodexUsage, isConfigured as codexConfigured } from './codex';
 import { fetchGlmUsage, isConfigured as glmConfigured } from './glm';
 import { fetchSupergrokUsage, isConfigured as supergrokConfigured } from './supergrok';
@@ -27,6 +28,12 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
     fn: fetchClaudeUsage,
     isConfigured: claudeConfigured,
     configHint: 'run `claude login`, or point CLAUDE_CREDENTIALS_PATH at .credentials.json',
+  },
+  gemini: {
+    key: 'gemini',
+    fn: fetchGeminiUsage,
+    isConfigured: geminiConfigured,
+    configHint: 'log in via `agy`, or point GEMINI_CREDENTIALS_PATH at antigravity-oauth-token',
   },
   codex: {
     key: 'codex',

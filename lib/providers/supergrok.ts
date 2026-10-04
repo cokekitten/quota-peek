@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { ProviderResult, UsageLimit } from './types';
@@ -16,9 +16,13 @@ const TIMEOUT_MS = Number(process.env.GROK_TIMEOUT_MS || 15000);
 // Refresh a bit early so a request never rides on a borderline token.
 const EXPIRY_SKEW_MS = 60_000;
 
-/** Configured = the Grok CLI's auth store exists (`grok login` has run). */
+/** Configured = the Grok CLI's auth store exists (`grok login` has run) and is a regular file. */
 export function isConfigured(authPath: string = AUTH_PATH): boolean {
-  return existsSync(authPath);
+  try {
+    return existsSync(authPath) && statSync(authPath).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /**

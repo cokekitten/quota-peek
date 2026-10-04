@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { PROVIDER_KEYS, configuredMap, fetchOneUsage } from './index';
 import { isConfigured as claudeConfigured } from './claude';
+import { isConfigured as geminiConfigured } from './gemini';
 import { isConfigured as codexConfigured } from './codex';
 import { isConfigured as supergrokConfigured } from './supergrok';
 import { isConfigured as glmConfigured } from './glm';
@@ -143,7 +144,12 @@ describe('credential-file provider probes', () => {
     writeFileSync(present, '{}');
     expect(existsSync(missing)).toBe(false);
 
-    for (const probe of [claudeConfigured, codexConfigured, supergrokConfigured]) {
+    for (const probe of [
+      claudeConfigured,
+      geminiConfigured,
+      codexConfigured,
+      supergrokConfigured,
+    ]) {
       expect(probe(missing)).toBe(false);
       expect(probe(present)).toBe(true);
     }

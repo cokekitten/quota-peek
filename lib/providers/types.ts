@@ -2,6 +2,7 @@
 
 export type ProviderKey =
   | 'claude'
+  | 'gemini'
   | 'codex'
   | 'glm'
   | 'supergrok'
@@ -123,6 +124,7 @@ export const PROVIDER_KEYS: ProviderKey[] = [
   'claude',
   'kimi',
   'codex',
+  'gemini',
   'deepseek',
   'mimo',
   'glm',

@@ -10,6 +10,7 @@ describe('PROVIDER_KEYS', () => {
       'claude',
       'kimi',
       'codex',
+      'gemini',
       'deepseek',
       'mimo',
       'glm',

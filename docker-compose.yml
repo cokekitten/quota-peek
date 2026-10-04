@@ -17,7 +17,8 @@ services:
       # Hard fail-fast: GLM is the only required key.
       GLM_API_KEY: ${GLM_API_KEY:?GLM_API_KEY is required — set it in .env or your shell}
       # Container-internal secret paths (differ from host paths).
-      CLAUDE_CREDENTIALS_PATH: /secrets/claude-creds.json
+      CLAUDE_CREDENTIALS_PATH: /secrets/claude/.credentials.json
+      GEMINI_CREDENTIALS_PATH: /secrets/gemini/antigravity-oauth-token
       CODEX_AUTH_PATH: /secrets/codex-auth.json
       GROK_AUTH_PATH: /secrets/grok/auth.json
       KIMI_CREDENTIALS_PATH: /secrets/kimi-creds.json
@@ -33,7 +34,10 @@ services:
       QP_POLL_INTERVAL_MS: ${QP_POLL_INTERVAL_MS:-300000}
       QP_HISTORY_DAYS: ${QP_HISTORY_DAYS:-90}
     volumes:
-      - ${CLAUDE_CREDENTIALS:-~/.claude/.credentials.json}:/secrets/claude-creds.json:ro
+      # Directory mounts: mount parent dirs so missing credential files don't cause
+      # Docker daemon to create bogus directories on the host.
+      - ${CLAUDE_DIR:-~/.claude}:/secrets/claude:ro
+      - ${GEMINI_DIR:-~/.gemini/antigravity-cli}:/secrets/gemini
       - ${CODEX_AUTH:-~/.codex/auth.json}:/secrets/codex-auth.json:ro
       # Directory mount (rw): xAI refresh tokens rotate; write-back must hit the
       # same file the grok CLI reads. A file-only :ro mount burns the login.
