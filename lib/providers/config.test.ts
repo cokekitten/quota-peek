@@ -10,6 +10,7 @@ import { isConfigured as kimiConfigured } from './kimi';
 import { isConfigured as volcengineConfigured } from './volcengine';
 import { isConfigured as deepseekConfigured } from './deepseek';
 import { isConfigured as mimoConfigured } from './mimo';
+import { isConfigured as cursorConfigured } from './cursor';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -31,6 +32,9 @@ const ENV_VARS = [
   'DEEPSEEK_BASE_URL',
   'MIMO_COOKIE',
   'MIMO_BASE_URL',
+  'CURSOR_ACCESS_TOKEN',
+  'CURSOR_BASE_URL',
+  'CURSOR_NO_KEYCHAIN',
 ];
 
 function setEnv(name: string, value?: string) {
@@ -61,12 +65,15 @@ describe('key-based provider probes', () => {
     // Kimi falls back to the Kimi Code CLI's own credential file, which exists
     // on machines that use that CLI — pin it away to test "nothing configured".
     setEnv('KIMI_CREDENTIALS_PATH', '/tmp/quota-peek-definitely-missing.json');
+    // Same pin for Cursor: a dev mac has a real `cursor-access-token` item.
+    setEnv('CURSOR_NO_KEYCHAIN', '1');
     expect(glmConfigured()).toBe(false);
     expect(minimaxConfigured()).toBe(false);
     expect(kimiConfigured()).toBe(false);
     expect(volcengineConfigured()).toBe(false);
     expect(deepseekConfigured()).toBe(false);
     expect(mimoConfigured()).toBe(false);
+    expect(cursorConfigured()).toBe(false);
   });
 
   it('report configured from the unsuffixed key', () => {
@@ -88,8 +95,10 @@ describe('key-based provider probes', () => {
     clearProviderEnv();
     setEnv('GLM_API_KEY_3', 'k3');
     setEnv('MINIMAX_API_KEY_2', 'k2');
+    setEnv('CURSOR_ACCESS_TOKEN_2', 'jwt');
     expect(glmConfigured()).toBe(true);
     expect(minimaxConfigured()).toBe(true);
+    expect(cursorConfigured()).toBe(true);
   });
 
   it('require both halves of the Volcengine AK/SK pair', () => {

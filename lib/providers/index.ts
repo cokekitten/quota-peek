@@ -1,6 +1,7 @@
 import { fetchClaudeUsage, isConfigured as claudeConfigured } from './claude';
 import { fetchGeminiUsage, isConfigured as geminiConfigured } from './gemini';
 import { fetchCodexUsage, isConfigured as codexConfigured } from './codex';
+import { fetchCursorUsage, isConfigured as cursorConfigured } from './cursor';
 import { fetchGlmUsage, isConfigured as glmConfigured } from './glm';
 import { fetchSupergrokUsage, isConfigured as supergrokConfigured } from './supergrok';
 import { fetchMinimaxUsage, isConfigured as minimaxConfigured } from './minimax';
@@ -40,6 +41,13 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
     fn: fetchCodexUsage,
     isConfigured: codexConfigured,
     configHint: 'run `codex login`, or point CODEX_AUTH_PATH at auth.json',
+  },
+  cursor: {
+    key: 'cursor',
+    fn: fetchCursorUsage,
+    isConfigured: cursorConfigured,
+    configHint:
+      'log in via `cursor-agent login` (macOS keychain), or set CURSOR_ACCESS_TOKEN',
   },
   glm: {
     key: 'glm',

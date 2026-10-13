@@ -1,6 +1,6 @@
 # ⚡ Quota Peek
 
-> One dashboard for your AI coding-plan usage — **Claude Code**, **Gemini** (Google One), **Codex**, **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), **Kimi** (Kimi Code 会员), **Volcengine**, **StepFun** (阶跃星辰 Step Plan), **DeepSeek**, **Xiaomi MiMo** (小米 Token Plan) and **OpenRouter** in a single glance.
+> One dashboard for your AI coding-plan usage — **Claude Code**, **Gemini** (Google One), **Codex**, **Cursor** (Pro / Pro+ / Ultra), **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), **Kimi** (Kimi Code 会员), **Volcengine**, **StepFun** (阶跃星辰 Step Plan), **DeepSeek**, **Xiaomi MiMo** (小米 Token Plan) and **OpenRouter** in a single glance.
 
 ![Quota Peek](docs/screenshot.png)
 
@@ -13,7 +13,7 @@ Quota Peek aggregates live usage/quota from major AI coding/subscription plans i
 
 ## ✨ Features
 
-- **Twelve providers, one view** — Claude Code, Gemini (Google One / agy), Codex (ChatGPT), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), Volcengine (火山方舟 Coding Plan), StepFun (阶跃星辰 Step Plan), DeepSeek (充值余额 + 当月消费), Xiaomi MiMo (小米 Token Plan) and OpenRouter (钱包余额 + 当月消费), side by side.
+- **Thirteen providers, one view** — Claude Code, Gemini (Google One / agy), Codex (ChatGPT), Cursor (Pro / Pro+ / Ultra), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), Volcengine (火山方舟 Coding Plan), StepFun (阶跃星辰 Step Plan), DeepSeek (充值余额 + 当月消费), Xiaomi MiMo (小米 Token Plan) and OpenRouter (钱包余额 + 当月消费), side by side.
 - **Independent cards** — the dashboard fires one parallel request per provider; each card renders the instant its provider responds. The slowest never blocks the rest.
 - **Normalized metrics** — providers show their real windows (**5h Window** and/or **Weekly**, depending on what the plan actually has), with precise countdowns like `Resets in 4 hr 36 min` or `Resets in 1 d 6 hr`.
 - **Smart refresh** — manual refresh, optional auto-refresh (10 min), and automatic refresh when you refocus the tab after 3+ minutes.
@@ -95,6 +95,7 @@ off.
 - **Kimi** — pass `-e KIMI_API_KEY=...` (an API Key from the Kimi Code Console), or mount `~/.kimi-code/credentials/kimi-code.json` the same way as the other credential files via `KIMI_CREDENTIALS_PATH`. Prefer the API key in Docker: OAuth access tokens last ~15 min and refresh write-back needs a writable file.
 - **DeepSeek** — plain env vars: `-e DEEPSEEK_API_KEY=sk-...` for the balance row, optionally `-e DEEPSEEK_TOKEN=...` (web-console `userToken`) for the 消费金额/充值余额 row.
 - **MiMo** — recommended: `-e MIMO_USER_ID=… -e MIMO_PASS_TOKEN=…` (account.xiaomi.com cookies) for automatic renewal; the renewed session is cached in `MIMO_SESSION_FILE` (compose mounts `./mimo-session` writable). Or pass `-e MIMO_COOKIE='…'` with the console Cookie header (~1 day, manual re-paste).
+- **Cursor** — the keychain lives on your Mac, not in the container: run `security find-generic-password -s cursor-access-token -w` on the Mac and pass the JWT via `-e CURSOR_ACCESS_TOKEN=…` (or `CURSOR_ACCESS_TOKEN=…` in `.env` — compose picks it up). It expires in ~2 months; re-run `cursor-agent login` and paste a fresh one.
 
 <details>
 <summary>Or with Docker Compose (recommended)</summary>
@@ -147,6 +148,7 @@ docker compose up -d --build
 | **DeepSeek** | Official `GET api.deepseek.com/user/balance` with the `sk-` API key; month spend via the platform's internal `usage/by_api_key/cost` with the web-console `userToken` | Set `DEEPSEEK_API_KEY` (balance). Optionally set `DEEPSEEK_TOKEN` to the `userToken` from `localStorage` on platform.deepseek.com to add the **Spend / Balance** row — it degrades to balance-only when the token expires. |
 | **MiMo** (小米) | Console-cookie-authenticated `GET platform.xiaomimimo.com/api/v1/tokenPlan/usage` + `/api/v1/tokenPlan/detail` (reset time) + `/api/v1/usage` (当月消费) + `/api/v1/balance` (the `tp-` API key can spend quota but cannot query it). The ~24h console cookie renews itself via the Xiaomi Account SSO seed (`userId`+`passToken`) when provided | Recommended: set `MIMO_USER_ID` + `MIMO_PASS_TOKEN` (account.xiaomi.com cookies — long-lived, auto-renews the session). Fallback: `MIMO_COOKIE` with a pasted console Cookie header (~1 day). |
 | **OpenRouter** | Management key → `GET /api/v1/credits` (wallet: `total_credits − total_usage`) + `POST /api/v1/analytics/query` (account-wide month spend); regular key → `GET /api/v1/key` (fallback: that key's own month) | Set `OPENROUTER_MANAGEMENT_KEY` (/settings/management-keys — admin key that cannot call models; give it an expiry). The regular `OPENROUTER_API_KEY` is optional, a per-key fallback source only. |
+| **Cursor** | Session JWT (macOS keychain `cursor-access-token`, written by `cursor-agent login`) → the dashboard's own `GetCurrentPeriodUsage` + `GetSandUsageStatus` RPCs | Just run `cursor-agent login` once on macOS. Elsewhere set `CURSOR_ACCESS_TOKEN` (the JWT from `security find-generic-password -s cursor-access-token -w`; re-login to renew when it expires). |
 
 A provider that isn't set up returns `ok: false` with `notConfigured: true` and a hint naming the variable to set — its card stays hidden until you turn on the `No key ×N` toggle, and never breaks the others.
 
@@ -172,6 +174,8 @@ See [`.env.example`](.env.example) for the full list. The only one you must set 
 
 **OpenRouter**'s card is account-wide through the Management key (`/settings/management-keys` — admin-only, cannot call models; give it an expiry): the wallet from `GET /api/v1/credits`, the month from `POST /api/v1/analytics/query` (every key on the account, even unconfigured ones — per-key `usage_monthly` understates as soon as a key is missing). A regular `OPENROUTER_API_KEY` is only a fallback source for per-key numbers when the management key is absent. Key spending caps are deliberately not shown: most keys are uncapped, so any aggregate of the capped few reads like an account limit and misleads.
 
+**Cursor** mirrors the web Spending page exactly: **Cursor Models** (`autoPercentUsed`) and **Other Models** (`apiPercentUsed`) are the two monthly pools that reset with the billing cycle, plus **Grok Bot** — its own *weekly* allowance on a separate reset clock (`GetSandUsageStatus`). The percentages arrive pre-computed server-side: the per-pool dollar amounts exist in Cursor's protobuf schema (`autoSpend/autoLimit/apiSpend/apiLimit`) but the backend withholds them, and the published `limit` field is a legacy figure no bar divides by — so the card shows the same numbers the dashboard shows and nothing derived from them. An **On-Demand** row appears only when a spend limit is actually configured (disabled on-demand stays silent, like the dashboard's "Disabled"). On macOS the credential is zero-config: the `cursor-agent` CLI stores its session JWT in the keychain (`cursor-access-token`, ~2-month expiry — re-run `cursor-agent login` when it lapses; there is no refresh half to renew it for you). Elsewhere pass that JWT via `CURSOR_ACCESS_TOKEN`; `CURSOR_NO_KEYCHAIN=1` opts out of the keychain lookup.
+
 **Usage history** (all optional, sensible defaults):
 
 | Variable | Default | What it does |
@@ -187,12 +191,12 @@ See [`.env.example`](.env.example) for the full list. The only one you must set 
 
 ### Multiple accounts (key-based providers)
 
-GLM, MiniMax, Kimi, Volcengine, StepFun, DeepSeek, MiMo and OpenRouter support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2`, `DEEPSEEK_API_KEY_2` + `DEEPSEEK_TOKEN_2`, `MIMO_USER_ID_2` + `MIMO_PASS_TOKEN_2` (or `MIMO_COOKIE_2`), `OPENROUTER_API_KEY_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
+GLM, MiniMax, Kimi, Volcengine, StepFun, DeepSeek, MiMo, OpenRouter and Cursor support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2`, `DEEPSEEK_API_KEY_2` + `DEEPSEEK_TOKEN_2`, `MIMO_USER_ID_2` + `MIMO_PASS_TOKEN_2` (or `MIMO_COOKIE_2`), `OPENROUTER_API_KEY_2`, `CURSOR_ACCESS_TOKEN_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected.
 
 ## 🏗️ How it works
 
 ```
-GET /api/usage/[provider]      ← single dynamic route: claude | gemini | codex | glm | supergrok | minimax | kimi | volcengine | stepfun | deepseek | mimo | openrouter
+GET /api/usage/[provider]      ← single dynamic route: claude | gemini | codex | cursor | glm | supergrok | minimax | kimi | volcengine | stepfun | deepseek | mimo | openrouter
 POST /api/usage/refresh       ← run one sampling round now (what the Refresh button calls)
 GET /api/history               ← short window behind the card change badges (all providers, one request)
 GET /api/history/[provider]    ← one channel: chart series + refresh log
@@ -240,7 +244,7 @@ lib/history/
   poller.ts                       # the background sampler (one timer, one process)
   *.test.ts                       # the store is tested against a real temporary database
 lib/providers/
-  claude.ts · gemini.ts · codex.ts · glm.ts · supergrok.ts · minimax.ts · kimi.ts · volcengine.ts · stepfun.ts · deepseek.ts · mimo.ts · openrouter.ts   # server-only providers
+  claude.ts · gemini.ts · codex.ts · cursor.ts · glm.ts · supergrok.ts · minimax.ts · kimi.ts · volcengine.ts · stepfun.ts · deepseek.ts · mimo.ts · openrouter.ts   # server-only providers
   index.ts                        # registry + fetchOneUsage()
   types.ts                        # shared domain types
 ```

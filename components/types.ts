@@ -5,6 +5,7 @@ export type ProviderKey =
   | 'claude'
   | 'gemini'
   | 'codex'
+  | 'cursor'
   | 'glm'
   | 'supergrok'
   | 'minimax'
@@ -66,6 +67,7 @@ export const PROVIDER_LABELS: Record<ProviderKey, string> = {
   claude: 'Claude Code',
   gemini: 'Gemini',
   codex: 'Codex',
+  cursor: 'Cursor',
   glm: 'GLM',
   supergrok: 'SuperGrok',
   minimax: 'MiniMax',
@@ -82,6 +84,7 @@ export const PROVIDER_ORDER: ProviderKey[] = [
   'claude',
   'kimi',
   'codex',
+  'cursor',
   'gemini',
   'deepseek',
   'mimo',

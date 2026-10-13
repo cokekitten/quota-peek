@@ -36,7 +36,8 @@ const getSlots = (provider: ProviderKey) => {
     provider === 'stepfun' ||
     provider === 'deepseek' ||
     provider === 'mimo' ||
-    provider === 'openrouter'
+    provider === 'openrouter' ||
+    provider === 'cursor'
   ) {
     return [] as const;
   }

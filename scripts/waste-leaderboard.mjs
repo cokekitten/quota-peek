@@ -39,6 +39,7 @@ const NAME = {
   kimi: 'Kimi 会员', codex: 'Codex Pro', glm: 'GLM Max', gemini: 'Gemini Google One',
   minimax: 'MiniMax Ultra', supergrok: 'SuperGrok Heavy', mimo: 'MiMo Max',
   stepfun: 'StepFun Max', deepseek: 'DeepSeek', openrouter: 'OpenRouter',
+  cursor: 'Cursor Ultra',
 };
 const PERIOD = { '5h': '5h 窗', '3p_5h': '5h 窗(3P)', weekly: '周', '3p_weekly': '周(3P)', monthly: '月' };
 
