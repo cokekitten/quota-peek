@@ -50,7 +50,7 @@ function mockDs(routes: Array<{ match: (url: string, auth: string) => boolean; s
 }
 
 describe('fetchDeepseekUsage', () => {
-  it('shows one 消费金额/充值余额 row: month spend over top-up balance', async () => {
+  it('shows one 消费金额/余额 row: month spend over the complete balance', async () => {
     process.env.DEEPSEEK_API_KEY = KEY;
     process.env.DEEPSEEK_TOKEN = TOKEN;
     mockDs([
@@ -61,14 +61,17 @@ describe('fetchDeepseekUsage', () => {
     const r = await fetchDeepseekUsage();
     expect(r.ok).toBe(true);
     expect(r.summary?.limits).toHaveLength(1);
-    // 30.5 / (30.5 + 59.5) = 33.9% — the spend share of the money pool
+    // 余额 = 充值 59.5 + 赠金 10 = 69.5, and the pool share is
+    // 30.5 / (30.5 + 69.5) = 30.5%
     expect(r.summary?.limits[0]).toMatchObject({
       kind: 'spend',
       label: 'Spend / Balance',
-      percent: 33.9,
+      percent: 30.5,
       used: 30.5,
-      total: 59.5,
+      total: 69.5,
       unit: '¥',
+      // the headline is a sum — the halves it came from are named
+      detail: '¥59.50 top-up + ¥10.00 granted',
     });
     // the month window rolls over at the local month boundary (GMT+8 console)
     const reset = new Date(r.summary?.limits[0].resetAt!);
@@ -142,16 +145,44 @@ describe('fetchDeepseekUsage', () => {
     expect(r.summary?.limits[0]).toMatchObject({ used: 30.5, total: 69.5 });
   });
 
-  it('degrades to one balance-only money row (充值余额) without a token', async () => {
+  it('rebuilds the complete balance from 充值 + 赠金 when total_balance is absent', async () => {
+    process.env.DEEPSEEK_API_KEY = KEY;
+    process.env.DEEPSEEK_TOKEN = TOKEN;
+    mockDs([
+      {
+        match: (u) => u.endsWith('/user/balance'),
+        body: {
+          is_available: true,
+          balance_infos: [{ currency: 'CNY', granted_balance: '10.00', topped_up_balance: '59.50' }],
+        },
+      },
+      { match: (u) => u.includes('by_api_key/cost'), body: COST(30.5) },
+    ]);
+
+    const r = await fetchDeepseekUsage();
+    expect(r.summary?.limits[0]).toMatchObject({
+      used: 30.5,
+      total: 69.5,
+      detail: '¥59.50 top-up + ¥10.00 granted',
+    });
+  });
+
+  it('degrades to one balance-only money row (完整余额) without a token', async () => {
     process.env.DEEPSEEK_API_KEY = KEY;
     mockDs([{ match: (u) => u.endsWith('/user/balance'), body: BALANCE }]);
 
     const r = await fetchDeepseekUsage();
     expect(r.ok).toBe(true);
     expect(r.summary?.limits).toHaveLength(1);
-    expect(r.summary?.limits[0]).toMatchObject({ kind: 'balance', percent: 0, used: 59.5, unit: '¥' });
-    // money rows state the amount once — no granted/top-up re-run of the total
-    expect(r.summary?.limits[0].detail).toBeUndefined();
+    // the bare row states the same complete balance (充值 + 赠金), and its
+    // note still names the halves
+    expect(r.summary?.limits[0]).toMatchObject({
+      kind: 'balance',
+      percent: 0,
+      used: 69.5,
+      unit: '¥',
+      detail: '¥59.50 top-up + ¥10.00 granted',
+    });
   });
 
   it('keeps the balance card when the usage token is rejected, with a note', async () => {
@@ -200,7 +231,7 @@ describe('fetchDeepseekUsage', () => {
     expect(r.error).toContain('401');
   });
 
-  it('merges two accounts exactly (Σspend / Σtop-up)', async () => {
+  it('merges two accounts exactly (Σspend / Σbalance)', async () => {
     process.env.DEEPSEEK_API_KEY = KEY;
     process.env.DEEPSEEK_TOKEN = TOKEN;
     process.env.DEEPSEEK_API_KEY_2 = 'sk-2';
@@ -222,7 +253,7 @@ describe('fetchDeepseekUsage', () => {
     expect(r.ok).toBe(true);
     expect(r.summary?.accounts).toHaveLength(2);
     const spend = r.summary?.limits.find((l) => l.kind === 'spend');
-    // Σspend = 128, Σtop-up = 100 → 128/228 = 56% pool share (bounded)
+    // Σspend = 128, Σbalance = 100 → 128/228 = 56% pool share (bounded)
     expect(spend).toMatchObject({ used: 128, total: 100, percent: 56 });
   });
 
