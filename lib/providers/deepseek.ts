@@ -44,6 +44,10 @@ import {
  *    not a pool at all. Expect the two totals to differ by design.
  *  - Because the span is real, both ends are reported (`paceStartAt` +
  *    `resetAt`), so the pace badge measures 28–31 days, not a 30-day stand-in.
+ *  - The payload splits spend across two axes: `series` (api_key × model) and
+ *    `function_series` (api_key × tool-search/tool-fetch, billed per call).
+ *    The console's 消费金额 adds both, so the month total does too — model
+ *    spend alone silently loses the 联网搜索 fees.
  */
 
 const DEFAULT_BASE_URL = 'https://api.deepseek.com';
@@ -77,14 +81,27 @@ interface BalanceResponse {
   balance_infos?: BalanceInfo[];
 }
 
-/** cost response: data.biz_data.data[].series[].buckets[].cost (money) */
+/** One (api_key, model) or (api_key, function) slice of the cost payload. */
+interface CostSeries {
+  buckets?: Array<{ time?: string | number; cost?: number }>;
+}
+
+/**
+ * cost response: `data.biz_data.data[]` carries TWO parallel axes —
+ * `series` (per api_key × model) and `function_series` (per api_key ×
+ * server-side function: `tool-search` / `tool-fetch`, billed per call).
+ * They are disjoint, and the platform's own 消费金额 metric adds both:
+ * its bundle reduces `[...row.series, ...row.function_series]`. Summing
+ * `series` alone silently drops the tool fees.
+ */
 interface CostResponse {
   code?: number;
   data?: {
     biz_data?: {
       data?: Array<{
         currency?: string;
-        series?: Array<{ buckets?: Array<{ time?: string | number; cost?: number }> }>;
+        series?: CostSeries[];
+        function_series?: CostSeries[];
       }>;
     };
   };
@@ -294,7 +311,11 @@ async function fetchMonthSpend(token: string): Promise<number> {
   let total = 0;
   let seen = false;
   for (const row of rows) {
-    for (const s of row.series ?? []) {
+    // Both axes, exactly like the console's 消费金额 metric: model spend plus
+    // the per-call tool fees (`tool-search` / `tool-fetch`). Disjoint, so
+    // adding them is not double counting — dropping the second axis understated
+    // the month by ~¥0.11 in one sample month.
+    for (const s of [...(row.series ?? []), ...(row.function_series ?? [])]) {
       for (const b of s.buckets ?? []) {
         const cost = num(b.cost);
         if (Number.isFinite(cost)) {

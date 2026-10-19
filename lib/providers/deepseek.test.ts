@@ -20,7 +20,8 @@ const BALANCE = {
   ],
 };
 
-const COST = (spend: number) => ({
+/** Real payload has two axes: per-model `series` and per-function tool fees. */
+const COST = (spend: number, toolFees = 0) => ({
   code: 0,
   data: {
     biz_data: {
@@ -28,6 +29,17 @@ const COST = (spend: number) => ({
         {
           currency: 'CNY',
           series: [{ buckets: [{ time: '2026-09-01', cost: spend / 2 }, { time: '2026-09-15', cost: spend / 2 }] }],
+          ...(toolFees
+            ? {
+                function_series: [
+                  {
+                    api_key: { name: 'search' },
+                    model: 'tool-search',
+                    buckets: [{ time: '2026-09-15', cost: toolFees }],
+                  },
+                ],
+              }
+            : {}),
         },
       ],
     },
@@ -135,6 +147,22 @@ describe('fetchDeepseekUsage', () => {
     // both bounds must sit on the same local midnight (the API rejects otherwise)
     expect(start % 86400).toBe(end % 86400);
     vi.useRealTimers();
+  });
+
+  it('adds per-call tool fees from function_series to the month spend', async () => {
+    process.env.DEEPSEEK_API_KEY = KEY;
+    process.env.DEEPSEEK_TOKEN = TOKEN;
+    mockDs([
+      { match: (u) => u.endsWith('/user/balance'), body: BALANCE },
+      { match: (u) => u.includes('by_api_key/cost'), body: COST(30.5, 0.11) },
+    ]);
+
+    const r = await fetchDeepseekUsage();
+    // The console's 消费金额 metric sums [...series, ...function_series];
+    // model spend alone would report 30.5 and lose the 联网搜索 calls.
+    expect(r.summary?.limits[0].used).toBeCloseTo(30.61, 6);
+    // …and the pool share follows the larger numerator
+    expect(r.summary?.limits[0].percent).toBeCloseTo((30.61 / (30.61 + 69.5)) * 100, 1);
   });
 
   it('falls back to the total balance when the payload does not split top-up', async () => {
