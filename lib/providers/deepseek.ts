@@ -5,6 +5,7 @@ import {
   nextMonthStart,
   poolSharePercent,
   readIndexedAccounts,
+  thisMonthStart,
 } from './accounts';
 
 /**
@@ -31,6 +32,18 @@ import {
  * spend / (spend + balance) — bounded 100% by construction. With only the API
  * key it degrades to a bare Balance row (the same complete balance). A
  * failing/absent token never fails the card; the money row carries a note.
+ *
+ * Two things about the window are worth knowing before touching this:
+ *
+ *  - The endpoint accepts any start/end (≤31 days; a wider range comes back
+ *    empty), so the window is ours to choose. The console OPENS on 近 30 天
+ *    (`preset:"last30Days"` in its bundle); this card asks for the calendar
+ *    month — the only one that can carry a percent, because its denominator
+ *    (spend + balance = 月初余额) is constant, so the bar grows linearly and
+ *    stops at 100%. A rolling 30-day spend over a point-in-time balance is
+ *    not a pool at all. Expect the two totals to differ by design.
+ *  - Because the span is real, both ends are reported (`paceStartAt` +
+ *    `resetAt`), so the pace badge measures 28–31 days, not a 30-day stand-in.
  */
 
 const DEFAULT_BASE_URL = 'https://api.deepseek.com';
@@ -202,7 +215,7 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
 
   if (haveSpend) {
     limits.push({
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       kind: 'spend',
       percent: haveBalance ? percentPool(spend, balance) : 0,
       used: spend,
@@ -212,6 +225,9 @@ async function fetchDeepseekAccount(account: DeepseekAccount): Promise<ProviderR
       // Money itself never resets, but the month window does — the rollover
       // anchors both the "Resets in …" line and the over/under pace delta.
       resetAt: nextMonthStart(),
+      // The window is the calendar month (当月消费), so the pace yardstick is
+      // the real month length, not a 30-day stand-in.
+      paceStartAt: thisMonthStart(),
     });
   } else if (haveBalance) {
     limits.push({

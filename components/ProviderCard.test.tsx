@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { deltaBadge, Metric } from './ProviderCard';
+import { deltaBadge, expectedPercentFor, Metric } from './ProviderCard';
 import type { HistoryDelta, HistorySeries } from '@/lib/history/series';
 
 describe('Metric', () => {
@@ -39,8 +39,8 @@ describe('Metric', () => {
   it('caps the bar width but not the number when usage exceeds the quota', () => {
     const html = renderToStaticMarkup(
       <Metric
-        label="Spend / Balance"
-        limit={{ label: 'Spend / Balance', kind: 'spend', percent: 128, used: 2428.85, total: 1897.06, unit: '¥' }}
+        label="Spend / Pool"
+        limit={{ label: 'Spend / Pool', kind: 'spend', percent: 128, used: 2428.85, total: 1897.06, unit: '¥' }}
       />,
     );
     expect(html).toMatch(/>128%</);
@@ -52,13 +52,48 @@ describe('Metric', () => {
     const resetAt = new Date(Date.now() + 10 * 864e5).toISOString();
     const html = renderToStaticMarkup(
       <Metric
-        label="Spend / Balance"
-        limit={{ label: 'Spend / Balance', kind: 'spend', percent: 50, used: 1, total: 1, unit: '¥', resetAt }}
+        label="Spend / Pool"
+        limit={{ label: 'Spend / Pool', kind: 'spend', percent: 50, used: 1, total: 1, unit: '¥', resetAt }}
       />,
     );
     // 10 of 30 days left → 66.7% expected by even pace; 50% actual → 17 under
     expect(html).toContain('class="pace under"');
     expect(html).toContain('-17%');
+  });
+
+  it('uses an exact window when the row states its start (month length matters)', () => {
+    const now = Date.now();
+    const html = renderToStaticMarkup(
+      <Metric
+        label="Spend / Pool"
+        limit={{
+          label: 'Spend / Pool',
+          kind: 'spend',
+          percent: 50,
+          used: 100,
+          total: 100,
+          unit: '¥',
+          // 20 of 30 elapsed → 66.7% expected, same as the 30d stand-in would
+          // have said, but derived from the window itself
+          paceStartAt: new Date(now - 20 * 864e5).toISOString(),
+          resetAt: new Date(now + 10 * 864e5).toISOString(),
+        }}
+      />,
+    );
+    expect(html).toContain('-17%');
+  });
+
+  it('spells money rows out as spent · left, not a used/total pair', () => {
+    const html = renderToStaticMarkup(
+      <Metric
+        label="Spend / Pool"
+        limit={{ label: 'Spend / Pool', kind: 'spend', percent: 49, used: 1312.62, total: 1366.93, unit: '¥' }}
+      />,
+    );
+    // ¥1313 / ¥1367 would read as 96% next to a 49% bar
+    expect(html).toContain('¥1313 spent · ¥1367 left');
+    expect(html).not.toContain('¥1313 / ¥1367');
+    expect(html).toMatch(/>49%</);
   });
 
   it('renders merged estimate rows without the ≈ marker', () => {
@@ -257,5 +292,77 @@ describe('a drop no window reset explains', () => {
   it('leaves ordinary drops unannotated', () => {
     const b = deltaBadge({ kind: 'pp', value: -5, at: NOW - 300_000, gapMs: 0 }, NOW);
     expect(b?.title).toBe('5.0 percentage points since 5 min');
+  });
+});
+
+describe('expectedPercentFor', () => {
+  const at = (iso: string) => new Date(iso).getTime();
+
+  it('divides by the real month length when both ends are known', () => {
+    // October 2026 is 31 days: the 30-day stand-in would say 63.3%, the truth is 61.3%
+    expect(
+      expectedPercentFor(
+        {
+          kind: 'spend',
+          paceStartAt: '2026-09-30T16:00:00.000Z', // 2026-10-01 00:00 +08
+          resetAt: '2026-10-31T16:00:00.000Z', // 2026-11-01 00:00 +08
+        },
+        at('2026-10-19T16:00:00.000Z'), // 2026-10-20 00:00 +08 → 19 of 31 days
+      ),
+    ).toBeCloseTo((19 / 31) * 100, 6);
+  });
+
+  it('handles February too (28 days is where 30d drifts most)', () => {
+    expect(
+      expectedPercentFor(
+        {
+          kind: 'spend',
+          paceStartAt: '2026-01-31T16:00:00.000Z', // 2026-02-01 00:00 +08
+          resetAt: '2026-02-28T16:00:00.000Z', // 2026-03-01 00:00 +08
+        },
+        at('2026-02-14T16:00:00.000Z'), // 2026-02-15 00:00 +08 → 14 of 28
+      ),
+    ).toBeCloseTo(50, 6);
+  });
+
+  it('falls back to the kind estimate when the window start is unknown', () => {
+    // Cursor's on-demand billing cycle: 10 of ~30 days left
+    const now = Date.now();
+    expect(
+      expectedPercentFor(
+        { kind: 'spend', resetAt: new Date(now + 10 * 864e5).toISOString() },
+        now,
+      ),
+    ).toBeCloseTo((1 - 10 / 30) * 100, 6);
+    // 5h windows are exact by construction
+    expect(
+      expectedPercentFor(
+        { kind: '5h', resetAt: new Date(now + 3600e3).toISOString() },
+        now,
+      ),
+    ).toBeCloseTo((1 - 1 / 5) * 100, 6);
+  });
+
+  it('prefers a merged row’s fetch-time expectation over any derivation', () => {
+    expect(
+      expectedPercentFor(
+        { kind: 'spend', expectedPercent: 42, resetAt: '2026-11-01T00:00:00.000Z' },
+        Date.now(),
+      ),
+    ).toBe(42);
+  });
+
+  it('reports nothing when there is no window to measure against', () => {
+    expect(expectedPercentFor({ kind: 'spend' }, Date.now())).toBeNull();
+    expect(
+      expectedPercentFor({ kind: 'credits', resetAt: '2026-11-01T00:00:00.000Z' }, Date.now()),
+    ).toBeNull();
+    // a window that has not started yet is 0%, not negative
+    expect(
+      expectedPercentFor(
+        { kind: 'spend', paceStartAt: '2026-11-01T00:00:00.000Z', resetAt: '2026-12-01T00:00:00.000Z' },
+        at('2026-10-01T00:00:00.000Z'),
+      ),
+    ).toBe(0);
   });
 });

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ProviderResult, UsageLimit } from './types';
-import { accountEnvName, fetchMultiAccount, nextUtcMonthStart, poolSharePercent, readIndexedAccounts } from './accounts';
+import { accountEnvName, fetchMultiAccount, nextUtcMonthStart, poolSharePercent, readIndexedAccounts, thisUtcMonthStart } from './accounts';
 
 /**
  * Xiaomi MiMo (小米 MiMo 开放平台, platform.xiaomimimo.com) usage.
@@ -419,7 +419,7 @@ async function fetchMimoAccount(account: MimoAccount): Promise<ProviderResult> {
   const haveBalance = Number.isFinite(balance) && balance > 0;
   if (haveSpend && haveBalance) {
     limits.push({
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       kind: 'spend',
       percent: poolSharePercent(spend, balance),
       used: spend,
@@ -428,17 +428,20 @@ async function fetchMimoAccount(account: MimoAccount): Promise<ProviderResult> {
       // The month window (UTC buckets) rolls over at the month boundary —
       // anchors the countdown and the over/under pace delta.
       resetAt: nextUtcMonthStart(),
+      // Both ends known, so the pace yardstick is the real month length.
+      paceStartAt: thisUtcMonthStart(),
     });
   } else if (haveBalance) {
     limits.push({ label: 'Balance', kind: 'balance', percent: 0, used: balance, unit });
   } else if (haveSpend) {
     limits.push({
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       kind: 'spend',
       percent: 0,
       used: spend,
       unit,
       resetAt: nextUtcMonthStart(),
+      paceStartAt: thisUtcMonthStart(),
     });
   }
 

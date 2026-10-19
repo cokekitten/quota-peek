@@ -192,19 +192,28 @@ export function mergeLimits(limits: UsageLimit[]): UsageLimit[] {
     // Pace for merged rows: each account's window shares the same duration but
     // resets at its own time, so weight the per-account expected consumption
     // (by elapsed time) with its quota. Only when every account reports a
-    // reset — comparing against a partial time base would be misleading.
-    const duration = KIND_DURATION_MS[merged.kind];
-    if (duration && group.every((l) => !!l.resetAt)) {
+    // reset — comparing against a partial time base would be misleading. An
+    // account that states its window start (`paceStartAt`) gets the exact
+    // span; the rest fall back to the kind's estimated duration.
+    const spans = group.map((l) =>
+      l.resetAt && l.paceStartAt
+        ? new Date(l.resetAt).getTime() - new Date(l.paceStartAt).getTime()
+        : KIND_DURATION_MS[merged.kind],
+    );
+    if (
+      group.every((l) => !!l.resetAt) &&
+      spans.every((s) => typeof s === 'number' && Number.isFinite(s) && s > 0)
+    ) {
       const now = Date.now();
       let wSum = 0;
       let eSum = 0;
-      for (const l of group) {
+      group.forEach((l, i) => {
         const w = exact ? (l.total ?? 1) : 1;
         const remainMs = new Date(l.resetAt!).getTime() - now;
-        const expected = Math.min(100, Math.max(0, (1 - remainMs / duration) * 100));
+        const expected = Math.min(100, Math.max(0, (1 - remainMs / (spans[i] as number)) * 100));
         wSum += w;
         eSum += w * expected;
-      }
+      });
       if (wSum > 0) merged.expectedPercent = eSum / wSum;
     }
     out.push(merged);
@@ -230,20 +239,35 @@ export function nextMonthStart(): string {
   return new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
 }
 
+/** Local this month's 1st, 00:00 — where that money window started. */
+export function thisMonthStart(): string {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+}
+
 /** The same in UTC — MiMo's month buckets are UTC (its console says so). */
 export function nextUtcMonthStart(): string {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
 }
 
-/** Window durations implied by kind, mirroring the card's pace math. */
+/** UTC this month's 1st, 00:00 — where that money window started. */
+export function thisUtcMonthStart(): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
+
+/** Window durations implied by kind — the fallback yardstick when a row does
+ * not carry an exact `paceStartAt`. */
 const KIND_DURATION_MS: Record<string, number> = {
   '5h': 5 * 3600e3,
   weekly: 7 * 24 * 3600e3,
   // Monthly windows are billing-cycle anchored (not calendar months) and the
   // APIs don't expose the window start — 30d is the closest uniform estimate.
   monthly: 30 * 24 * 3600e3,
-  // Money rows are month-scoped (当月消费) — same 30d estimate as 'monthly'.
+  // Money rows are month-scoped (当月消费). Providers that know the month
+  // start send `paceStartAt` (exact); this 30d stand-in only covers rows that
+  // don't (Cursor's on-demand billing cycle).
   spend: 30 * 24 * 3600e3,
 };
 

@@ -28,6 +28,15 @@ export interface UsageLimit {
   total?: number;
   /** ISO timestamp when the window resets, if known. */
   resetAt?: string;
+  /**
+   * ISO timestamp when the window STARTED, for rows whose window is a real
+   * calendar span the provider knows (当月消费 from the 1st). With both ends
+   * known the pace yardstick is exact — no 30-day stand-in — which matters
+   * for months that aren't 30 days long (31 → 3pp, February → 7pp). Leave
+   * undefined when the window start is unknown (e.g. billing cycles), and the
+   * UI falls back to the kind's estimated duration.
+   */
+  paceStartAt?: string;
   /** True when percent is a cross-account estimate (mixed/unknown plans). */
   estimated?: boolean;
   /**

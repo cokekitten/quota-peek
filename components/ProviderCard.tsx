@@ -267,21 +267,32 @@ export function Metric({
   const sev = p >= 90 ? 'crit' : p >= 70 ? 'warn' : 'ok';
   const reset = limit?.resetAt ? `Resets in ${fmtRel(limit.resetAt)}` : null;
   // Absolute numbers (money pools, credit counts) — percent-only rows skip this.
+  // Money rows spell the two figures out (spent · left) because the bar above
+  // is NOT their ratio: a "¥1,312.62 / ¥1,366.93" pair next to "49.0%" reads
+  // like a broken used/total.
   const abs =
     limit && limit.used !== undefined
-      ? `${fmtAbs(limit.used, limit.unit)}${
-          limit.total !== undefined ? ` / ${fmtAbs(limit.total, limit.unit)}` : ''
-        }`
+      ? limit.kind === 'spend' && limit.total !== undefined
+        ? `${fmtAbs(limit.used, limit.unit)} spent · ${fmtAbs(limit.total, limit.unit)} left`
+        : `${fmtAbs(limit.used, limit.unit)}${
+            limit.total !== undefined ? ` / ${fmtAbs(limit.total, limit.unit)}` : ''
+          }`
       : null;
   // Merged rows carry a quota-weighted expectedPercent (windows reset at
-  // different times); single accounts derive expected from their own reset.
-  const pace = limit
-    ? limit.expectedPercent !== undefined
-      ? paceFromExpected(p, limit.expectedPercent)
-      : limit.resetAt
-        ? paceDelta(limit.kind, p, limit.resetAt)
-        : null
-    : null;
+  // different times); single accounts derive expected from their own window.
+  const expected = limit ? expectedPercentFor(limit, Date.now()) : null;
+  const pace = limit && expected !== null ? paceFromExpected(p, expected) : null;
+  // Money rows: name both figures in the tooltip, including the pool the bar
+  // actually divides by (month spend + remaining balance = month-start money).
+  const absTitle =
+    limit && limit.kind === 'spend' && limit.used !== undefined
+      ? limit.total !== undefined
+        ? `当月消费 ${fmtAbs(limit.used, limit.unit)} · 月初余额 ${fmtAbs(
+            limit.used + limit.total,
+            limit.unit,
+          )} (= 消费 + 剩余); bar = 当月消费 ÷ 月初余额`
+        : `当月消费 ${fmtAbs(limit.used, limit.unit)} · 余额未知; bar = 消费占比`
+      : 'used / total';
 
   return (
     <div className="metric">
@@ -307,14 +318,7 @@ export function Metric({
       {(abs || limit?.detail || reset) && (
         <div className="meta">
           {abs && (
-            <span
-              className="abs"
-              title={
-                limit?.kind === 'spend'
-                  ? '当月消费金额 / 余额 · bar = share of the money pool (spend + total)'
-                  : 'used / total'
-              }
-            >
+            <span className="abs" title={absTitle}>
               {abs}
             </span>
           )}
@@ -331,29 +335,42 @@ export function Metric({
 }
 
 /**
- * Pace delta: compares actual consumption against even (time-proportional)
- * consumption. Window length is implied by kind (5h / 7d); with the reset time
- * we know how much of the window has elapsed, hence the "expected" percent.
- * Positive delta = burning faster than pace (over), negative = under pace.
+ * Expected consumption by elapsed time — the yardstick the pace badge measures
+ * against. Three sources, in order of trust:
+ *
+ *   1. `expectedPercent` — merged rows already weighted it at fetch time.
+ *   2. `paceStartAt` + `resetAt` — the provider knows both ends of the window,
+ *      so elapsed/whole is exact (a 31-day month is not 30).
+ *   3. the kind's estimated duration — no window start available at all
+ *      (billing cycles: Cursor's on-demand, MiMo's plan period).
  */
-function paceDelta(
-  kind: string,
-  percent: number,
-  resetAt: string,
-): { text: string; cls: 'over' | 'under' | 'even'; title: string } | null {
-  const duration =
-    kind === '5h' || kind === 'session'
-      ? 5 * 3600e3
-      : kind === 'weekly' || kind.startsWith('weekly_')
-        ? 7 * 24 * 3600e3
-        : kind === 'monthly' || kind === 'spend'
-          ? 30 * 24 * 3600e3 // month-anchored; start unknown → 30d estimate
-          : null;
+export function expectedPercentFor(
+  limit: Pick<UsageLimit, 'kind' | 'resetAt' | 'paceStartAt' | 'expectedPercent'>,
+  nowMs: number,
+): number | null {
+  if (limit.expectedPercent !== undefined) return limit.expectedPercent;
+  if (!limit.resetAt) return null;
+  const resetMs = new Date(limit.resetAt).getTime();
+  if (!Number.isFinite(resetMs)) return null;
+  const startMs = limit.paceStartAt ? new Date(limit.paceStartAt).getTime() : NaN;
+  if (Number.isFinite(startMs) && resetMs > startMs) {
+    return clamp01to100(((nowMs - startMs) / (resetMs - startMs)) * 100);
+  }
+  const duration = estimatedWindowMs(limit.kind);
   if (!duration) return null;
-  const remainMs = new Date(resetAt).getTime() - Date.now();
-  if (!Number.isFinite(remainMs)) return null;
-  const expected = Math.min(100, Math.max(0, (1 - remainMs / duration) * 100));
-  return paceFromExpected(percent, expected);
+  return clamp01to100((1 - (resetMs - nowMs) / duration) * 100);
+}
+
+const clamp01to100 = (v: number): number => Math.min(100, Math.max(0, v));
+
+/** Window length implied by kind when the provider doesn't state one. */
+function estimatedWindowMs(kind: string): number | null {
+  if (kind === '5h' || kind === 'session') return 5 * 3600e3;
+  if (kind === 'weekly' || kind.startsWith('weekly_')) return 7 * 24 * 3600e3;
+  // Month-anchored, start unknown → 30d estimate; rows without a reset time
+  // and without `paceStartAt` get no pace badge at all.
+  if (kind === 'monthly' || kind === 'spend') return 30 * 24 * 3600e3;
+  return null;
 }
 
 /** Delta of actual vs expected consumption: positive = burning faster. */

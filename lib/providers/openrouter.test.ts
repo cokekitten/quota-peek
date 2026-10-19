@@ -72,7 +72,7 @@ describe('fetchOpenrouterUsage', () => {
     expect(spendReset.getUTCMonth()).toBe((new Date().getUTCMonth() + 1) % 12);
   });
 
-  it('combines the wallet balance into a Spend / Balance money row', async () => {
+  it('combines the wallet balance into a Spend / Pool money row', async () => {
     process.env.OPENROUTER_API_KEY = KEY;
     process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
     mockOr([
@@ -89,7 +89,7 @@ describe('fetchOpenrouterUsage', () => {
     expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend']);
     // 12.4 / (12.4 + 16.3) = 43.2% — pool share, MiMo-style
     expect(r.summary?.limits[0]).toMatchObject({
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       kind: 'spend',
       percent: 43.2,
       used: 12.4,
@@ -134,7 +134,7 @@ describe('fetchOpenrouterUsage', () => {
     const r = await fetchOpenrouterUsage();
     // the whole account's month (67.93), not the fresh key's own 12.4
     expect(r.summary?.limits[0]).toMatchObject({
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       kind: 'spend',
       used: 67.93,
       total: 16.3,
@@ -161,14 +161,14 @@ describe('fetchOpenrouterUsage', () => {
     const r = await fetchOpenrouterUsage();
     expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend']);
     expect(r.summary?.limits[0]).toMatchObject({
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       used: 12.4,
       total: 16.3,
       percent: 43.2,
     });
   });
 
-  it('shows the month Spend / Balance with the management key alone when analytics answers', async () => {
+  it('shows the month Spend / Pool with the management key alone when analytics answers', async () => {
     process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
     mockOr([
       {
@@ -187,7 +187,7 @@ describe('fetchOpenrouterUsage', () => {
     expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend']);
     // 5 / (5 + 16.3) = 23.5%
     expect(r.summary?.limits[0]).toMatchObject({
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       used: 5,
       total: 16.3,
       percent: 23.5,
@@ -195,7 +195,7 @@ describe('fetchOpenrouterUsage', () => {
     expect(new Date(r.summary?.limits[0].resetAt!).getUTCDate()).toBe(1);
   });
 
-  it('shows a cumulative Usage / Balance row with the management key alone', async () => {
+  it('shows a cumulative Usage / Pool row with the management key alone', async () => {
     process.env.OPENROUTER_MANAGEMENT_KEY = 'sk-or-mgmt';
     mockOr([
       {
@@ -210,7 +210,7 @@ describe('fetchOpenrouterUsage', () => {
     expect(r.summary?.limits).toHaveLength(1);
     // $30 spent of the $100 ever purchased → 30% pool share, no month window
     expect(r.summary?.limits[0]).toMatchObject({
-      label: 'Usage / Balance',
+      label: 'Usage / Pool',
       kind: 'spend',
       percent: 30,
       used: 30,
@@ -259,7 +259,7 @@ describe('fetchOpenrouterUsage', () => {
     expect(r.ok).toBe(true);
     expect(r.summary?.limits.map((l) => l.kind)).toEqual(['spend']);
     expect(r.summary?.limits[0]).toMatchObject({
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       used: 5,
       total: 16.3,
     });

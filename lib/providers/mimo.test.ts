@@ -121,7 +121,7 @@ describe('fetchMimoUsage', () => {
     // 当月消费/余额 (DeepSeek-style): pool share 66.17/(66.17+12.34) = 84.3%
     expect(r.summary?.limits[2]).toMatchObject({
       kind: 'spend',
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       percent: 84.3,
       used: 66.17,
       total: 12.34,

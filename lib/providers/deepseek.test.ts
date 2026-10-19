@@ -65,7 +65,7 @@ describe('fetchDeepseekUsage', () => {
     // 30.5 / (30.5 + 69.5) = 30.5%
     expect(r.summary?.limits[0]).toMatchObject({
       kind: 'spend',
-      label: 'Spend / Balance',
+      label: 'Spend / Pool',
       percent: 30.5,
       used: 30.5,
       total: 69.5,
@@ -78,6 +78,13 @@ describe('fetchDeepseekUsage', () => {
     expect(reset.getDate()).toBe(1);
     expect(reset.getHours()).toBe(0);
     expect(reset.getMonth()).toBe((new Date().getMonth() + 1) % 12);
+    // …and it STARTED at this month's 1st, so the pace yardstick is the real
+    // month length (28–31 d) instead of a 30-day stand-in
+    const start = new Date(r.summary?.limits[0].paceStartAt!);
+    expect(start.getDate()).toBe(1);
+    expect(start.getHours()).toBe(0);
+    expect(start.getMonth()).toBe(new Date().getMonth());
+    expect(start.getTime()).toBeLessThan(reset.getTime());
   });
 
   it('computes the percent as the spend share of the money pool', async () => {

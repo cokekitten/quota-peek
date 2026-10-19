@@ -5,6 +5,7 @@ import {
   nextUtcMonthStart,
   poolSharePercent,
   readIndexedAccounts,
+  thisUtcMonthStart,
 } from './accounts';
 
 /**
@@ -116,13 +117,14 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
     const limits: UsageLimit[] = [];
     if (monthSpend !== undefined && wallet) {
       limits.push({
-        label: 'Spend / Balance',
+        label: 'Spend / Pool',
         kind: 'spend',
         percent: poolSharePercent(monthSpend, wallet.balance),
         used: monthSpend,
         total: wallet.balance,
         unit: '$',
         resetAt: nextUtcMonthStart(),
+        paceStartAt: thisUtcMonthStart(),
       });
     } else if (monthSpend !== undefined) {
       limits.push({
@@ -135,7 +137,7 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
       });
     } else if (wallet) {
       limits.push({
-        label: 'Usage / Balance',
+        label: 'Usage / Pool',
         kind: 'spend',
         percent: poolSharePercent(wallet.spent, wallet.balance),
         used: wallet.spent,
@@ -169,13 +171,14 @@ export async function fetchOpenrouterUsage(): Promise<ProviderResult> {
           const used = monthSpend ?? l.used ?? 0;
           if (!wallet) return { ...l, used };
           return {
-            label: 'Spend / Balance',
+            label: 'Spend / Pool',
             kind: 'spend',
             percent: poolSharePercent(used, wallet.balance),
             used,
             total: wallet.balance,
             unit: '$',
             resetAt: l.resetAt,
+            paceStartAt: l.paceStartAt ?? thisUtcMonthStart(),
           };
         })
       : base;

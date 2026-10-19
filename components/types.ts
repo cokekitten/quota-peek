@@ -25,6 +25,8 @@ export interface UsageLimit {
   /** Display unit for the absolute used/total numbers, e.g. '¥' or 'cr'. */
   unit?: string;
   resetAt?: string;
+  /** Window start when the provider knows it — makes the pace yardstick exact. */
+  paceStartAt?: string;
   estimated?: boolean;
   expectedPercent?: number;
   detail?: string;
