@@ -38,6 +38,8 @@ export interface AccountUsage {
   planLabel?: string;
   limits: UsageLimit[];
   error?: string;
+  /** Account-wide windows at 100% — any one of them blocks the account. */
+  exhausted?: string[];
 }
 
 export interface ProviderSummary {
@@ -45,6 +47,8 @@ export interface ProviderSummary {
   limits: UsageLimit[];
   accounts?: AccountUsage[];
   partial?: boolean;
+  /** Every account is maxed on some window: nothing can serve right now. */
+  unavailable?: boolean;
   [key: string]: unknown;
 }
 

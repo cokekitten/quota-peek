@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { deltaBadge, expectedPercentFor, Metric } from './ProviderCard';
+import { deltaBadge, expectedPercentFor, Metric, unavailableNote } from './ProviderCard';
 import type { HistoryDelta, HistorySeries } from '@/lib/history/series';
+import type { AccountUsage } from './types';
 
 describe('Metric', () => {
   it('renders a money row as one bare amount — no bar, no percent', () => {
@@ -364,5 +365,33 @@ describe('expectedPercentFor', () => {
         at('2026-10-01T00:00:00.000Z'),
       ),
     ).toBe(0);
+  });
+});
+
+describe('unavailableNote', () => {
+  const acct = (key: string, exhausted?: string[]): AccountUsage => ({
+    key,
+    ok: true,
+    limits: [],
+    ...(exhausted ? { exhausted } : {}),
+  });
+
+  it('names the maxed window of every account when none can serve', () => {
+    expect(unavailableNote([acct('1', ['5h Window']), acct('2', ['Weekly'])])).toBe(
+      'No account can serve — #1 5h Window maxed · #2 Weekly maxed',
+    );
+  });
+
+  it('says nothing while one account still has headroom', () => {
+    expect(unavailableNote([acct('1', ['5h Window']), acct('2')])).toBeNull();
+  });
+
+  it('judges only the accounts that answered', () => {
+    expect(
+      unavailableNote([
+        acct('1', ['Weekly']),
+        { key: '2', ok: false, limits: [], error: 'HTTP 401' },
+      ]),
+    ).toBe('No account can serve — #1 Weekly maxed');
   });
 });

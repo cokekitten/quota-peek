@@ -358,6 +358,15 @@ main {
   border: 1px solid var(--tag-border);
   white-space: nowrap;
 }
+/* Merged multi-account card whose provider cannot serve: every account is
+   maxed on some window. Red like a failure, without claiming one — the data
+   is fine, the quota is gone. Declared before .stale so a cached reading
+   still reads as cached (its freshness is the weaker claim). */
+.card-head .tag.crit {
+  color: var(--red);
+  background: none;
+  border-color: var(--red);
+}
 .card.error .card-head .tag {
   color: var(--red);
   background: none;
@@ -396,6 +405,11 @@ main {
 }
 .seg button:hover {
   color: var(--text);
+}
+/* An account that is itself maxed on one of its windows — it cannot serve
+   even when the provider as a whole can (the Σ bar averages it away). */
+.seg button.maxed {
+  color: color-mix(in srgb, var(--red) 75%, var(--muted));
 }
 .seg button.on {
   background: var(--tag-bg);
@@ -542,6 +556,17 @@ main {
   font-size: 12px;
   color: var(--muted);
   white-space: pre-wrap;
+}
+
+/* Merged view where every account is out on some window: the Σ bars are an
+   average of two leftover quotas, so they look like headroom nothing can
+   spend. Name each account's maxed window — which one is full decides when
+   the card recovers. */
+.card-alert {
+  margin: -4px 0 14px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--red) 80%, var(--text));
 }
 
 .raw {

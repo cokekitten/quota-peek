@@ -66,6 +66,13 @@ export interface AccountUsage {
   planLabel?: string;
   limits: UsageLimit[];
   error?: string;
+  /**
+   * Labels of the account-wide windows sitting at 100% (5h / weekly /
+   * monthly). One is enough to refuse every request through this account,
+   * even while its other windows still show headroom — so an account can be
+   * unusable while none of its bars looks full. Absent when nothing is maxed.
+   */
+  exhausted?: string[];
 }
 
 export interface ProviderSummary {
@@ -85,6 +92,13 @@ export interface ProviderSummary {
   accounts?: AccountUsage[];
   /** True when some configured accounts failed and were excluded from the merge. */
   partial?: boolean;
+  /**
+   * True when every account that answered is exhausted on at least one
+   * account-wide window — no account can serve a request right now. The
+   * merged bars are an average of what is left, so without this flag a
+   * half-full Σ row would read as headroom that no single account can spend.
+   */
+  unavailable?: boolean;
   /** Provider may attach extra fields (plan_type, level, …) — kept for the UI. */
   [key: string]: unknown;
 }

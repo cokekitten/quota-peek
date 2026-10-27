@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { HistoryDelta, HistorySeries } from '@/lib/history/series';
-import { PROVIDER_LABELS, type ProviderKey, type ProviderResponse, type ProviderResult, type UsageLimit } from './types';
+import {
+  PROVIDER_LABELS,
+  type AccountUsage,
+  type ProviderKey,
+  type ProviderResponse,
+  type ProviderResult,
+  type UsageLimit,
+} from './types';
 
 interface Props {
   provider: ProviderKey;
@@ -136,6 +143,11 @@ export default function ProviderCard({ provider, refreshKey, series }: Props) {
   const planLabel = accountView ? accountView.planLabel : summary?.planLabel ?? undefined;
   const stale = state.status === 'ready' && !!state.data.stale;
   const partial = multi && !!summary?.partial;
+  // The merged view can look healthy while nothing is servable: Σ averages
+  // each account's leftover quota, so #1's maxed 5h window + #2's maxed
+  // weekly window still draw two comfortable-looking bars. `unavailable` is
+  // the provider's verdict that every account is out on some window.
+  const unavailable = multi && !accountView && !!summary?.unavailable;
   // History follows the account tab: the Σ view charts the merged row, the
   // per-account tabs chart that account's own row.
   const scope = accountView ? accountView.key : 'merged';
@@ -158,11 +170,15 @@ export default function ProviderCard({ provider, refreshKey, series }: Props) {
               {accounts.map((a, i) => (
                 <button
                   key={a.key}
-                  className={sel === i + 1 ? 'on' : ''}
+                  className={[sel === i + 1 ? 'on' : '', a.ok && a.exhausted?.length ? 'maxed' : '']
+                    .filter(Boolean)
+                    .join(' ')}
                   onClick={() => setAcct(i + 1)}
                   title={
                     a.ok
-                      ? `Account ${a.key}${a.planLabel ? ` · ${a.planLabel}` : ''}`
+                      ? `Account ${a.key}${a.planLabel ? ` · ${a.planLabel}` : ''}${
+                          a.exhausted?.length ? ` — ${a.exhausted.join(' + ')} maxed` : ''
+                        }`
                       : `Account ${a.key}: ${a.error || 'offline'}`
                   }
                 >
@@ -175,17 +191,25 @@ export default function ProviderCard({ provider, refreshKey, series }: Props) {
         </span>
         <span className="head-right">
           {busy && <span className="spinner" title={loading ? 'loading' : 'refreshing'} />}
-          <span className={stale ? 'tag stale' : 'tag'}>
+          <span className={`tag${stale ? ' stale' : ''}${unavailable ? ' crit' : ''}`}>
             {loading
               ? '—'
               : stale
                 ? 'cached'
                 : multi && !accountView
-                  ? `×${accounts.length}${partial ? ' ⚠' : ''}`
+                  ? `×${accounts.length}${unavailable ? ' · maxed' : ''}${partial ? ' ⚠' : ''}`
                   : planLabel || 'live'}
           </span>
         </span>
       </div>
+      {unavailable && accounts && (
+        <div
+          className="card-alert"
+          title="Every account has at least one window at 100%, so no account can serve a request — the merged bars average in capacity that cannot be spent."
+        >
+          {unavailableNote(accounts)}
+        </div>
+      )}
       {accountView && !accountView.ok ? (
         <div className="text-note">{accountView.error || 'offline'}</div>
       ) : (
@@ -213,6 +237,19 @@ export default function ProviderCard({ provider, refreshKey, series }: Props) {
           ))}
     </div>
   );
+}
+
+/**
+ * One line naming every account's maxed window, when no account can serve.
+ * Null while at least one account still has headroom (or none answered) —
+ * an unservable card is the only thing this sentence claims.
+ */
+export function unavailableNote(accounts: AccountUsage[]): string | null {
+  const serving = accounts.filter((a) => a.ok);
+  if (!serving.length || !serving.every((a) => !!a.exhausted?.length)) return null;
+  return `No account can serve — ${serving
+    .map((a) => `#${a.key} ${a.exhausted!.join(' + ')} maxed`)
+    .join(' · ')}`;
 }
 
 export function Metric({

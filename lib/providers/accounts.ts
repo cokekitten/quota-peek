@@ -61,6 +61,25 @@ export interface FetchMultiMeta {
 }
 
 /**
+ * Window kinds that gate the whole account: one of them at 100% refuses every
+ * request through that account, whatever its other windows still show.
+ *
+ * Model-scoped rows (Claude's weekly_scoped_*, Cursor's cursor-models /
+ * other-models / grok-bot, Gemini's 3p_*) and money rows (spend — Cursor's
+ * on-demand allowance, DeepSeek's month spend) deliberately don't count:
+ * maxing one of those leaves the rest of the account usable, so treating it
+ * as a blocker would cry wolf.
+ */
+const GATING_WINDOW_KINDS = new Set(['5h', 'session', 'weekly', 'monthly']);
+
+/** Labels of the windows that put an account out of service. Exported for tests. */
+export function exhaustedWindows(limits: UsageLimit[]): string[] {
+  return limits
+    .filter((l) => GATING_WINDOW_KINDS.has(l.kind) && l.percent >= 100)
+    .map((l) => l.label);
+}
+
+/**
  * Fan out to all configured accounts in parallel and combine the results.
  * A single configured account returns the provider's result untouched (no
  * toggle on the card). With 2+, the merged view carries combined limits plus
@@ -75,13 +94,19 @@ export async function fetchMultiAccount<T>(
   const results = await Promise.all(accounts.map((a) => fetchAccount(a.config)));
   if (results.length === 1) return results[0];
 
-  const accountViews: AccountUsage[] = results.map((r, i) => ({
-    key: accounts[i].key,
-    ok: r.ok,
-    planLabel: r.summary?.planLabel,
-    limits: r.summary?.limits ?? [],
-    error: r.error,
-  }));
+  const accountViews: AccountUsage[] = results.map((r, i) => {
+    const limits = r.summary?.limits ?? [];
+    const view: AccountUsage = {
+      key: accounts[i].key,
+      ok: r.ok,
+      planLabel: r.summary?.planLabel,
+      limits,
+      error: r.error,
+    };
+    const exhausted = r.ok ? exhaustedWindows(limits) : [];
+    if (exhausted.length) view.exhausted = exhausted;
+    return view;
+  });
 
   const okIdx = results.map((r, i) => (r.ok ? i : -1)).filter((i) => i >= 0);
   if (okIdx.length === 0) {
@@ -100,6 +125,11 @@ export async function fetchMultiAccount<T>(
       okIdx.map((i) => results[i].summary?.planLabel).filter((p): p is string => !!p),
     ),
   ];
+  // Every account that answered is out of quota on some window: nothing can
+  // serve a request, even though each merged bar still shows room. A failed
+  // account does not rescue the verdict — it cannot be shown to serve either
+  // (and partial already flags that it was excluded).
+  const unavailable = okIdx.every((i) => !!accountViews[i].exhausted?.length);
   return {
     ok: true,
     provider: meta.provider,
@@ -116,6 +146,7 @@ export async function fetchMultiAccount<T>(
       ),
       accounts: accountViews,
       partial: okIdx.length < results.length || undefined,
+      unavailable: unavailable || undefined,
     },
   };
 }

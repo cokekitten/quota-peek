@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   accountEnvName,
+  exhaustedWindows,
   fetchMultiAccount,
   mergeLimits,
   readIndexedAccounts,
@@ -231,5 +232,88 @@ describe('fetchMultiAccount', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Account 1: boom-a');
     expect(result.error).toContain('Account 3: boom-b');
+  });
+});
+
+describe('exhaustedWindows', () => {
+  it('treats a maxed account-wide window as a blocker', () => {
+    expect(
+      exhaustedWindows([
+        { label: '5h Window', kind: '5h', percent: 100 },
+        { label: 'Weekly', kind: 'weekly', percent: 68 },
+      ]),
+    ).toEqual(['5h Window']);
+  });
+
+  it('ignores model-scoped and money rows — maxing them leaves the account usable', () => {
+    expect(
+      exhaustedWindows([
+        { label: 'Weekly · Fable', kind: 'weekly_scoped_fable', percent: 100 },
+        { label: 'Cursor Models', kind: 'cursor-models', percent: 100 },
+        { label: 'On-demand', kind: 'spend', percent: 100 },
+        { label: 'Balance', kind: 'balance', percent: 0, used: 0 },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('multi-account availability', () => {
+  const meta = { provider: 'glm', label: 'GLM' } as const;
+  const account = (limits: UsageLimit[]): ProviderResult => ({
+    ok: true,
+    provider: 'glm',
+    label: 'GLM',
+    summary: { planLabel: 'Max', planKey: 'max', limits },
+  });
+
+  it('marks the card unavailable when each account is maxed on a different window', async () => {
+    // The GLM shape: #1's 5h window is full, #2's weekly window is full. The
+    // merged bars (50% / 84%) look like headroom, but neither account can
+    // serve a request.
+    const result = await fetchMultiAccount(
+      [{ key: '1', config: 'one' }, { key: '2', config: 'two' }],
+      async (config) =>
+        account(
+          config === 'one'
+            ? [
+                { label: '5h Window', kind: '5h', percent: 100 },
+                { label: 'Weekly', kind: 'weekly', percent: 68 },
+              ]
+            : [
+                { label: '5h Window', kind: '5h', percent: 0 },
+                { label: 'Weekly', kind: 'weekly', percent: 100 },
+              ],
+        ),
+      meta,
+    );
+    expect(result.summary?.limits.map((l) => l.percent)).toEqual([50, 84]);
+    expect(result.summary?.unavailable).toBe(true);
+    expect(result.summary?.accounts?.map((a) => a.exhausted)).toEqual([
+      ['5h Window'],
+      ['Weekly'],
+    ]);
+  });
+
+  it('stays available while one account still has headroom', async () => {
+    const result = await fetchMultiAccount(
+      [{ key: '1', config: 'one' }, { key: '2', config: 'two' }],
+      async (config) =>
+        account(
+          config === 'one'
+            ? [
+                { label: '5h Window', kind: '5h', percent: 100 },
+                { label: 'Weekly', kind: 'weekly', percent: 90 },
+              ]
+            : [
+                { label: '5h Window', kind: '5h', percent: 10 },
+                { label: 'Weekly', kind: 'weekly', percent: 20 },
+              ],
+        ),
+      meta,
+    );
+    expect(result.summary?.unavailable).toBeUndefined();
+    // The blocked account is still called out — just not card-wide.
+    expect(result.summary?.accounts?.[0].exhausted).toEqual(['5h Window']);
+    expect(result.summary?.accounts?.[1].exhausted).toBeUndefined();
   });
 });
