@@ -137,7 +137,7 @@ docker compose up -d --build
 | Provider | How it authenticates | What you need |
 | --- | --- | --- |
 | **Claude Code** | OAuth token from `~/.claude/.credentials.json` → Anthropic's `/api/oauth/usage` | Just be logged in via the `claude` CLI with a subscription. Nothing to configure. |
-| **Gemini** (Google One) | OAuth token from `~/.gemini/antigravity-cli/antigravity-oauth-token` → Cloud Code Prediction API `retrieveUserQuotaSummary` | Just be logged in via `agy` (Google Antigravity CLI) with a Google One subscription. Auto-refreshes OAuth tokens. |
+| **Gemini** (Google One) | OAuth token from `~/.gemini/antigravity-cli/antigravity-oauth-token` → Cloud Code Prediction API `retrieveUserQuotaSummary` | Just be logged in via `agy` (Google Antigravity CLI) with a Google One subscription. Auto-refreshes OAuth tokens. The upstream only returns the Gemini 5h/weekly group to a client it recognizes as the Antigravity IDE, so requests carry `antigravity/hub/<version>` (a bare `antigravity-cli` UA gets a Claude/GPT-only body, which used to show 0%); override with `GEMINI_USER_AGENT` if Google raises the version gate. |
 | **Codex** | Reads `~/.codex/auth.json`, calls the internal `wham/usage` endpoint | Run Codex once so the auth file exists. Nothing to configure. |
 | **GLM** | API key in the `Authorization` header | Set `GLM_API_KEY` in `.env` (**required**). Use `GLM_BASE_URL` for z.ai international. |
 | **SuperGrok** | OAuth token from `~/.grok/auth.json` (via `grok login`) + internal `cli-chat-proxy.grok.com/v1/billing` | Just run the official Grok CLI (`grok login`) once with an active SuperGrok subscription. Nothing else to configure. |

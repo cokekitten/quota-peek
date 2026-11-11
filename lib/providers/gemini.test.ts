@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isConfigured, summarizeGeminiUsage } from './gemini';
+import { GEMINI_USER_AGENT, isConfigured, summarizeGeminiUsage } from './gemini';
 import path from 'node:path';
 
 describe('summarizeGeminiUsage', () => {
@@ -83,9 +83,58 @@ describe('summarizeGeminiUsage', () => {
     expect(limits[2]).toMatchObject({ label: '3P Models · Weekly', kind: '3p_weekly', percent: 15 });
   });
 
+  it('never relabels the Claude/GPT group as Gemini 5h/weekly rows', () => {
+    // Real response for a UA the upstream does not recognize as the Antigravity
+    // IDE: the Gemini group is simply absent. groups[0] used to be mistaken for
+    // it, so the card showed the 3P bucket (0%) as Gemini's own windows forever.
+    const limits = summarizeGeminiUsage({
+      groups: [
+        {
+          displayName: 'Claude and GPT models',
+          buckets: [
+            {
+              bucketId: '3p-weekly',
+              window: 'weekly',
+              remainingFraction: 0.9999528,
+              resetTime: '2026-11-18T07:24:12Z',
+            },
+            { bucketId: '3p-5h', window: '5h', remainingFraction: 1 },
+          ],
+        },
+      ],
+    });
+
+    expect(limits.map((l) => l.kind)).toEqual(['3p_5h', '3p_weekly']);
+    expect(limits.map((l) => l.percent)).toEqual([0, 0]);
+  });
+
+  it('recognizes groups by bucket id when display names are missing', () => {
+    const limits = summarizeGeminiUsage({
+      groups: [
+        {
+          buckets: [
+            { bucketId: 'gemini-5h', window: '5h', remainingFraction: 0.5 },
+            { bucketId: 'gemini-weekly', window: 'weekly', remainingFraction: 0.84 },
+          ],
+        },
+      ],
+    });
+
+    expect(limits).toHaveLength(2);
+    expect(limits[0]).toMatchObject({ label: '5h Window', kind: '5h', percent: 50 });
+    expect(limits[1]).toMatchObject({ label: 'Weekly', kind: 'weekly', percent: 16 });
+  });
+
   it('handles empty response gracefully without crashing', () => {
     const limits = summarizeGeminiUsage({});
     expect(limits).toEqual([]);
+  });
+});
+
+describe('GEMINI_USER_AGENT', () => {
+  it('identifies as the Antigravity IDE, not a bare CLI client', () => {
+    // A UA the upstream does not gate as the IDE gets no Gemini group at all.
+    expect(GEMINI_USER_AGENT).toMatch(/^antigravity\/hub\/\d+\.\d+\.\d+ /);
   });
 });
 

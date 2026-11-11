@@ -33,6 +33,16 @@ const CLIENT_SECRET = process.env.GEMINI_CLIENT_SECRET || DEFAULT_CLIENT_SECRET;
 
 const TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 15000);
 
+// The quota summary is gated on the caller's User-Agent. A client the server
+// does not recognize as the Antigravity IDE gets a Claude/GPT-only response
+// with no Gemini group at all — verified against the same account:
+//   'antigravity-cli'                      -> 1 group  (Claude and GPT models)
+//   'antigravity/hub/2.23.0 windows/amd64' -> 2 groups (Gemini Models + Claude/GPT)
+// The gate sits somewhere between hub 2.1 and 2.10, so keep a version known to
+// pass it and allow an override if Google rotates the threshold.
+export const GEMINI_USER_AGENT =
+  process.env.GEMINI_USER_AGENT || 'antigravity/hub/2.23.0 windows/amd64';
+
 const CACHE_TTL_MS = 60_000; // serve fresh cache for 1 min
 const STALE_TTL_MS = 5 * 60_000; // serve last-good on error for up to 5 min
 let cache: { result: ProviderResult; ts: number } | null = null;
@@ -83,10 +93,15 @@ export function summarizeGeminiUsage(data: QuotaSummaryResponse): UsageLimit[] {
   const groups = data.groups || [];
   const limits: UsageLimit[] = [];
 
-  const geminiGroup =
-    groups.find((g) => g.displayName === 'Gemini Models') ||
-    groups.find((g) => g.displayName?.toLowerCase().includes('gemini')) ||
-    groups[0];
+  // Only a group that really is the Gemini group may feed the 5h/weekly rows.
+  // Falling back to groups[0] relabelled the Claude/GPT buckets as Gemini's own
+  // windows and showed 0% forever, because the upstream omits the Gemini group
+  // for UAs it does not recognize (see GEMINI_USER_AGENT).
+  const geminiGroup = groups.find(
+    (g) =>
+      g.displayName?.toLowerCase().includes('gemini') ||
+      (g.buckets || []).some((b) => /^gemini[-_]/i.test(b.bucketId || '')),
+  );
 
   if (geminiGroup?.buckets) {
     const b5h = geminiGroup.buckets.find((b) => b.window === '5h' || b.bucketId?.includes('5h'));
@@ -121,7 +136,8 @@ export function summarizeGeminiUsage(data: QuotaSummaryResponse): UsageLimit[] {
       g !== geminiGroup &&
       (g.displayName?.includes('Claude') ||
         g.displayName?.includes('GPT') ||
-        g.displayName?.includes('3p')),
+        g.displayName?.includes('3p') ||
+        (g.buckets || []).some((b) => /^3p[-_]/i.test(b.bucketId || ''))),
   );
 
   if (p3Group?.buckets) {
@@ -274,7 +290,7 @@ async function fetchLive(): Promise<ProviderResult> {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'User-Agent': 'antigravity-cli',
+          'User-Agent': GEMINI_USER_AGENT,
         },
         body: JSON.stringify({ project: 'default-cli-project' }),
         signal: controller.signal,
