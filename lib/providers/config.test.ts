@@ -11,6 +11,7 @@ import { isConfigured as volcengineConfigured } from './volcengine';
 import { isConfigured as deepseekConfigured } from './deepseek';
 import { isConfigured as mimoConfigured } from './mimo';
 import { isConfigured as cursorConfigured } from './cursor';
+import { isConfigured as qwenConfigured } from './qwen';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -35,6 +36,8 @@ const ENV_VARS = [
   'CURSOR_ACCESS_TOKEN',
   'CURSOR_BASE_URL',
   'CURSOR_NO_KEYCHAIN',
+  'QWEN_COOKIE',
+  'QWEN_SEC_TOKEN',
 ];
 
 function setEnv(name: string, value?: string) {
@@ -74,6 +77,7 @@ describe('key-based provider probes', () => {
     expect(deepseekConfigured()).toBe(false);
     expect(mimoConfigured()).toBe(false);
     expect(cursorConfigured()).toBe(false);
+    expect(qwenConfigured()).toBe(false);
   });
 
   it('report configured from the unsuffixed key', () => {
@@ -89,6 +93,8 @@ describe('key-based provider probes', () => {
     setEnv('MIMO_COOKIE', 'api-platform_serviceToken=x');
     expect(deepseekConfigured()).toBe(true);
     expect(mimoConfigured()).toBe(true);
+    setEnv('QWEN_COOKIE', 'cna=x; session=y');
+    expect(qwenConfigured()).toBe(true);
   });
 
   it('count a suffixed key alone (account 1 absent, gaps allowed)', () => {

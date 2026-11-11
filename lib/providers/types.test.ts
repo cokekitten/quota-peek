@@ -20,6 +20,7 @@ describe('PROVIDER_KEYS', () => {
       'minimax',
       'openrouter',
       'volcengine',
+      'qwen',
     ]);
   });
 });

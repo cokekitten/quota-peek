@@ -14,7 +14,8 @@ export type ProviderKey =
   | 'stepfun'
   | 'deepseek'
   | 'mimo'
-  | 'openrouter';
+  | 'openrouter'
+  | 'qwen';
 
 export interface UsageLimit {
   label: string;
@@ -83,6 +84,7 @@ export const PROVIDER_LABELS: Record<ProviderKey, string> = {
   deepseek: 'DeepSeek',
   mimo: 'MiMo',
   openrouter: 'OpenRouter',
+  qwen: 'Qwen',
 };
 
 /** Dashboard / history-page card order. */
@@ -100,6 +102,7 @@ export const PROVIDER_ORDER: ProviderKey[] = [
   'minimax',
   'openrouter',
   'volcengine',
+  'qwen',
 ];
 
 export interface ProviderResponse {

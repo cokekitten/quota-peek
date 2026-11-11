@@ -66,7 +66,7 @@ const DETAIL = {
   data: {
     planCode: 'max',
     planName: 'Max',
-    currentPeriodEnd: '2026-10-21 23:59:59',
+    currentPeriodEnd: '2027-10-21 23:59:59',
     expired: false,
     enableAutoRenew: true,
     autoRenewDiscount: null,
@@ -117,7 +117,7 @@ describe('fetchMimoUsage', () => {
     const monthly = r.summary?.limits[1];
     expect(monthly).toMatchObject({ kind: 'monthly', percent: 25, used: 500_000_000, total: 2_000_000_000, unit: 'cr' });
     // currentPeriodEnd is UTC (the console labels it "(UTC)") — 23:59:59Z, not local.
-    expect(monthly?.resetAt).toBe('2026-10-21T23:59:59.000Z');
+    expect(monthly?.resetAt).toBe('2027-10-21T23:59:59.000Z');
     // 当月消费/余额 (DeepSeek-style): pool share 66.17/(66.17+12.34) = 84.3%
     expect(r.summary?.limits[2]).toMatchObject({
       kind: 'spend',

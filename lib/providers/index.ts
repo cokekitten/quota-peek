@@ -11,6 +11,7 @@ import { fetchStepfunUsage, isConfigured as stepfunConfigured } from './stepfun'
 import { fetchDeepseekUsage, isConfigured as deepseekConfigured } from './deepseek';
 import { fetchMimoUsage, isConfigured as mimoConfigured } from './mimo';
 import { fetchOpenrouterUsage, isConfigured as openrouterConfigured } from './openrouter';
+import { fetchQwenUsage, isConfigured as qwenConfigured } from './qwen';
 import { PROVIDER_KEYS } from './types';
 import type { ProviderDef, ProviderKey, ProviderResult } from './types';
 
@@ -106,6 +107,13 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
     isConfigured: openrouterConfigured,
     configHint:
       'set OPENROUTER_MANAGEMENT_KEY (/settings/management-keys — wallet + month spend); OPENROUTER_API_KEY only as a per-key fallback',
+  },
+  qwen: {
+    key: 'qwen',
+    fn: fetchQwenUsage,
+    isConfigured: qwenConfigured,
+    configHint:
+      'set QWEN_COOKIE (Cookie header from a logged-in platform.qianwenai.com request)',
   },
 };
 

@@ -13,7 +13,8 @@ export type ProviderKey =
   | 'stepfun'
   | 'deepseek'
   | 'mimo'
-  | 'openrouter';
+  | 'openrouter'
+  | 'qwen';
 
 export interface UsageLimit {
   /** Human label for the metric, e.g. "Primary · 5h window". */
@@ -158,4 +159,5 @@ export const PROVIDER_KEYS: ProviderKey[] = [
   'minimax',
   'openrouter',
   'volcengine',
+  'qwen',
 ];
