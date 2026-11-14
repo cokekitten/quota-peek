@@ -1,6 +1,6 @@
 # ⚡ Quota Peek
 
-> One dashboard for your AI coding-plan usage — **Claude Code**, **Gemini** (Google One), **Codex**, **Cursor** (Pro / Pro+ / Ultra), **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), **Kimi** (Kimi Code 会员), **Volcengine**, **StepFun** (阶跃星辰 Step Plan), **Qwen** (千问 Token Plan), **DeepSeek**, **Xiaomi MiMo** (小米 Token Plan) and **OpenRouter** in a single glance.
+> One dashboard for your AI coding-plan usage — **Claude Code**, **Gemini** (Google One), **Codex**, **Cursor** (Pro / Pro+ / Ultra), **Devin**, **GLM**, **SuperGrok**, **MiniMax** (国内 Token Plan), **Kimi** (Kimi Code 会员), **Volcengine**, **StepFun** (阶跃星辰 Step Plan), **Qwen** (千问 Token Plan), **DeepSeek**, **Xiaomi MiMo** (小米 Token Plan) and **OpenRouter** in a single glance.
 
 ![Quota Peek](docs/screenshot.png)
 
@@ -13,13 +13,14 @@ Quota Peek aggregates live usage/quota from major AI coding/subscription plans i
 
 ## ✨ Features
 
-- **Fourteen providers, one view** — Claude Code, Gemini (Google One / agy), Codex (ChatGPT), Cursor (Pro / Pro+ / Ultra), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), Volcengine (火山方舟 Coding Plan), StepFun (阶跃星辰 Step Plan), Qwen (千问 Token Plan 个人版), DeepSeek (完整余额 = 充值 + 赠金, 当月消费), Xiaomi MiMo (小米 Token Plan) and OpenRouter (钱包余额 + 当月消费), side by side.
+- **Fifteen providers, one view** — Claude Code, Gemini (Google One / agy), Codex (ChatGPT), Cursor (Pro / Pro+ / Ultra), Devin (Cognition), GLM Coding Plan, SuperGrok (xAI), MiniMax Token Plan (国内), Kimi (Kimi Code 会员), Volcengine (火山方舟 Coding Plan), StepFun (阶跃星辰 Step Plan), Qwen (千问 Token Plan 个人版), DeepSeek (完整余额 = 充值 + 赠金, 当月消费), Xiaomi MiMo (小米 Token Plan) and OpenRouter (钱包余额 + 当月消费), side by side.
 - **Independent cards** — the dashboard fires one parallel request per provider; each card renders the instant its provider responds. The slowest never blocks the rest.
 - **Normalized metrics** — providers show their real windows (**5h Window** and/or **Weekly**, depending on what the plan actually has), with precise countdowns like `Resets in 4 hr 36 min` or `Resets in 1 d 6 hr`.
 - **Smart refresh** — manual refresh, optional auto-refresh (10 min), and automatic refresh when you refocus the tab after 3+ minutes.
 - **Usage history** — a background sampler (5 min, no cron) records every provider reading to a local SQLite file: percentage, absolute figures, each account separately, and failures. Cards stay a glanceable snapshot with a change badge (`+2.5%`, `-¥0.31`, `↻ reset` when a window rolled over) that is grey below 2 percentage points, amber to 10, red beyond — a routine poll tick must not look like an alarm, and the pace badge keeps red/amber/green for its own question — a trend line under every bar reads as a stray rule, so the curves live on `/history`: any window over 24 h / 7 d / 30 d, next to a log of what each read saw. CSV export included.
 - **No double fetching** — the page reads the sampler's last reading instead of calling every provider again, so opening the dashboard can't be the reason a rate-limited card goes offline. A reading younger than one interval is served as-is, one to two intervals old is served with a `cached` tag, and beyond that the app goes upstream for real. A served reading is not written to history twice; the sampler already recorded it.
 - **Resilient** — a provider that errors out degrades to an offline card; it never breaks the others. Claude's results are cached briefly and served stale on failure.
+- **Magpie as a source** — accounts you already added in [magpie](https://github.com/yetone/magpie) feed these cards directly (one `GET /v1/magpie/quotas`), so a Devin / Cursor / Antigravity subscription needs no second sign-in here; providers magpie does not carry keep using this machine's own credentials.
 - **No dead cards** — a provider with no key / no credential file is hidden instead of occupying a slot; the `No key ×N` pill in the header reveals them (each one names the variable to set) and the choice is remembered in `localStorage`. A provider that **is** configured but failing — expired token, 429, network down — never hides, because that's the signal you opened the dashboard for.
 - **Zero infrastructure** — a single Next.js app plus one SQLite file. Run it, open it, done; history is just a file you can delete or back up.
 
@@ -139,6 +140,7 @@ docker compose up -d --build
 | **Claude Code** | OAuth token from `~/.claude/.credentials.json` → Anthropic's `/api/oauth/usage` | Just be logged in via the `claude` CLI with a subscription. Nothing to configure. |
 | **Gemini** (Google One) | OAuth token from `~/.gemini/antigravity-cli/antigravity-oauth-token` → Cloud Code Prediction API `retrieveUserQuotaSummary` | Just be logged in via `agy` (Google Antigravity CLI) with a Google One subscription. Auto-refreshes OAuth tokens. The upstream only returns the Gemini 5h/weekly group to a client it recognizes as the Antigravity IDE, so requests carry `antigravity/hub/<version>` (a bare `antigravity-cli` UA gets a Claude/GPT-only body, which used to show 0%); override with `GEMINI_USER_AGENT` if Google raises the version gate. |
 | **Codex** | Reads `~/.codex/auth.json`, calls the internal `wham/usage` endpoint | Run Codex once so the auth file exists. Nothing to configure. |
+| **Devin** | The devin CLI's own `GetUserStatus` Connect RPC (daily + weekly quota, ACUs, overage balance) | Just be signed in via `devin auth login` (reads `~/.local/share/devin/credentials.toml`). Elsewhere set `DEVIN_API_KEY` — a `cog_…` service-user key works too. |
 | **GLM** | API key in the `Authorization` header | Set `GLM_API_KEY` in `.env` (**required**). Use `GLM_BASE_URL` for z.ai international. |
 | **SuperGrok** | OAuth token from `~/.grok/auth.json` (via `grok login`) + internal `cli-chat-proxy.grok.com/v1/billing` | Just run the official Grok CLI (`grok login`) once with an active SuperGrok subscription. Nothing else to configure. |
 | **MiniMax** (国内) | Subscription Key (Token Plan) via `Authorization: Bearer` to `https://www.minimaxi.com/v1/token_plan/remains` | Set `MINIMAX_API_KEY` to your Token Plan Subscription Key from minimaxi.com. Defaults to domestic endpoint. |
@@ -152,6 +154,8 @@ docker compose up -d --build
 | **Cursor** | Session JWT (macOS keychain `cursor-access-token`, written by `cursor-agent login`) → the dashboard's own `GetCurrentPeriodUsage` + `GetSandUsageStatus` RPCs | Just run `cursor-agent login` once on macOS. Elsewhere set `CURSOR_ACCESS_TOKEN` (the JWT from `security find-generic-password -s cursor-access-token -w`; re-login to renew when it expires). |
 
 A provider that isn't set up returns `ok: false` with `notConfigured: true` and a hint naming the variable to set — its card stays hidden until you turn on the `No key ×N` toggle, and never breaks the others.
+
+**Magpie as a source.** If you run [magpie](https://github.com/yetone/magpie), the accounts it already carries feed these cards — no second sign-in, no duplicated key. Set `MAGPIE_BASE_URL` (e.g. `http://192.0.2.10:3425`) and `MAGPIE_GATEWAY_KEY`, preferably a **read-only** gateway key (`magpie gateway-key add quota-peek --read-only`) so the dashboard can read quotas and spend nothing. One `GET /v1/magpie/quotas` returns every account and is mapped onto the card whose provider it belongs to: `antigravity` → **Gemini** (its Gemini pool becomes 5h/Weekly, the Claude & GPT pool the **3P Models** rows), `claude` → **Claude Code**, `codex` → **Codex**, `cursor` → **Cursor**, `devin` → **Devin**, `grok` → **SuperGrok**, plus the other providers plan ids. A provider magpie carries takes its numbers from magpie (`MAGPIE_PREFER=0` flips that to fallback-only: local credentials win, magpie fills the gaps); a provider it does not carry is untouched. Two magpie accounts of the same provider arrive as the usual Σ/1/2 tabs. Text-only rows (magpie's `On-demand $0.00`) and pay-as-you-go balances are skipped — a bar over a money pool nobody divides says nothing.
 
 **MiniMax** uses the domestic Token Plan endpoint by default and reports the same 5h rolling + weekly windows as the other providers.
 
@@ -190,16 +194,20 @@ See [`.env.example`](.env.example) for the full list. The only one you must set 
 | `QP_CACHE_TTL_MS` | `60000` | Reuse window so a poll and a page load don't double-hit a provider. |
 | `QP_POLL_OWNER` | `hostname:pid` | Identity used for the sampling lease (set it to see who holds it). |
 | `QP_POLL_LEASE_MS` | `max(10 min, 2 × interval)` | How long a sampling lease is held; the holder renews, others idle. |
+| `MAGPIE_BASE_URL` | — | magpie gateway address; with the key below, the accounts magpie carries feed their cards. |
+| `MAGPIE_GATEWAY_KEY` | — | magpie gateway key (read-only is enough) for `GET /v1/magpie/quotas`. |
+| `MAGPIE_PREFER` | `1` | `1`: magpie wins for the providers it carries; `0`: only when this machine has no credentials. |
+| `MAGPIE_CACHE_TTL_MS` | `60000` | How long one magpie read serves every card. |
 | `QP_SELF_URL` | `http://127.0.0.1:$PORT` | Where the boot hook hands off to the poller (set it if the port is mapped). |
 
 ### Multiple accounts (key-based providers)
 
-GLM, MiniMax, Kimi, Volcengine, StepFun, Qwen, DeepSeek, MiMo, OpenRouter and Cursor support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2`, `QWEN_COOKIE_2`, `DEEPSEEK_API_KEY_2` + `DEEPSEEK_TOKEN_2`, `MIMO_USER_ID_2` + `MIMO_PASS_TOKEN_2` (or `MIMO_COOKIE_2`), `OPENROUTER_API_KEY_2`, `CURSOR_ACCESS_TOKEN_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected. A merged bar is an average, not an assurance: when **every** account is maxed on some window — one on its 5h, another on its weekly — the Σ bars still show the leftovers' headroom, so the card flags `×2 · maxed` and names the blocking window per account (`No account can serve — #1 5h Window maxed · #2 Weekly maxed`). Only account-wide windows (5h / weekly / monthly) count: a maxed model-scoped row (Claude's Fable weekly, Cursor's model pools) or a spent on-demand pool leaves the rest of the account usable, so it never makes the card look blocked. An account's tab is tinted red while that account is maxed.
+GLM, MiniMax, Kimi, Volcengine, StepFun, Qwen, DeepSeek, MiMo, OpenRouter, Cursor and Devin support multiple accounts on a single card. Leave the normal vars as account 1 and add `_2`, `_3`, … suffixed vars for the rest — e.g. `KIMI_API_KEY_2`, `GLM_API_KEY_2`, `MINIMAX_API_KEY_2`, `VOLC_ACCESS_KEY_2` + `VOLC_SECRET_KEY_2`, `STEPFUN_COOKIE_2`, `QWEN_COOKIE_2`, `DEEPSEEK_API_KEY_2` + `DEEPSEEK_TOKEN_2`, `MIMO_USER_ID_2` + `MIMO_PASS_TOKEN_2` (or `MIMO_COOKIE_2`), `OPENROUTER_API_KEY_2`, `CURSOR_ACCESS_TOKEN_2`, `DEVIN_API_KEY_2` (numbering gaps are fine). With 2+ accounts configured the card's bars show the **combined** quota (weighted by absolute used/total when the provider reports it, otherwise a mean marked ≈), and a **Σ / 1 / 2 toggle** in the card header switches between the merged view and each account. A failed account never breaks the others: it's excluded from the merge and shows its error when selected. A merged bar is an average, not an assurance: when **every** account is maxed on some window — one on its 5h, another on its weekly — the Σ bars still show the leftovers' headroom, so the card flags `×2 · maxed` and names the blocking window per account (`No account can serve — #1 5h Window maxed · #2 Weekly maxed`). Only account-wide windows (5h / weekly / monthly) count: a maxed model-scoped row (Claude's Fable weekly, Cursor's model pools) or a spent on-demand pool leaves the rest of the account usable, so it never makes the card look blocked. An account's tab is tinted red while that account is maxed.
 
 ## 🏗️ How it works
 
 ```
-GET /api/usage/[provider]      ← single dynamic route: claude | gemini | codex | cursor | glm | supergrok | minimax | kimi | volcengine | stepfun | qwen | deepseek | mimo | openrouter
+GET /api/usage/[provider]      ← single dynamic route: claude | gemini | codex | cursor | devin | glm | supergrok | minimax | kimi | volcengine | stepfun | qwen | deepseek | mimo | openrouter
 POST /api/usage/refresh       ← run one sampling round now (what the Refresh button calls)
 GET /api/history               ← short window behind the card change badges (all providers, one request)
 GET /api/history/[provider]    ← one channel: chart series + refresh log
@@ -247,7 +255,7 @@ lib/history/
   poller.ts                       # the background sampler (one timer, one process)
   *.test.ts                       # the store is tested against a real temporary database
 lib/providers/
-  claude.ts · gemini.ts · codex.ts · cursor.ts · glm.ts · supergrok.ts · minimax.ts · kimi.ts · volcengine.ts · stepfun.ts · qwen.ts · deepseek.ts · mimo.ts · openrouter.ts   # server-only providers
+  claude.ts · gemini.ts · codex.ts · cursor.ts · devin.ts · magpie.ts · glm.ts · supergrok.ts · minimax.ts · kimi.ts · volcengine.ts · stepfun.ts · qwen.ts · deepseek.ts · mimo.ts · openrouter.ts   # server-only providers
   index.ts                        # registry + fetchOneUsage()
   types.ts                        # shared domain types
 ```

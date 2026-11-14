@@ -2,6 +2,7 @@ import { fetchClaudeUsage, isConfigured as claudeConfigured } from './claude';
 import { fetchGeminiUsage, isConfigured as geminiConfigured } from './gemini';
 import { fetchCodexUsage, isConfigured as codexConfigured } from './codex';
 import { fetchCursorUsage, isConfigured as cursorConfigured } from './cursor';
+import { fetchDevinUsage, isConfigured as devinConfigured } from './devin';
 import { fetchGlmUsage, isConfigured as glmConfigured } from './glm';
 import { fetchSupergrokUsage, isConfigured as supergrokConfigured } from './supergrok';
 import { fetchMinimaxUsage, isConfigured as minimaxConfigured } from './minimax';
@@ -12,6 +13,7 @@ import { fetchDeepseekUsage, isConfigured as deepseekConfigured } from './deepse
 import { fetchMimoUsage, isConfigured as mimoConfigured } from './mimo';
 import { fetchOpenrouterUsage, isConfigured as openrouterConfigured } from './openrouter';
 import { fetchQwenUsage, isConfigured as qwenConfigured } from './qwen';
+import { magpieConfigured, magpieCoverage, magpieHint, magpieProviderResult } from './magpie';
 import { PROVIDER_KEYS } from './types';
 import type { ProviderDef, ProviderKey, ProviderResult } from './types';
 
@@ -49,6 +51,13 @@ export const PROVIDERS: Record<ProviderKey, ProviderDef> = {
     isConfigured: cursorConfigured,
     configHint:
       'log in via `cursor-agent login` (macOS keychain), or set CURSOR_ACCESS_TOKEN',
+  },
+  devin: {
+    key: 'devin',
+    fn: fetchDevinUsage,
+    isConfigured: devinConfigured,
+    configHint:
+      'run `devin auth login`, point DEVIN_CREDENTIALS_PATH at credentials.toml, or set DEVIN_API_KEY',
   },
   glm: {
     key: 'glm',
@@ -137,19 +146,45 @@ export function configuredMap(): Record<ProviderKey, boolean> {
   return out;
 }
 
+/**
+ * configuredMap plus the providers magpie can serve. magpie keeps the real
+ * accounts, so a card whose provider has no local key still belongs on the
+ * board when magpie carries it. Reads magpie's quota list (cached, one call
+ * for the whole map); an unreachable magpie just leaves the local split.
+ */
+export async function configuredMapWithMagpie(): Promise<Record<ProviderKey, boolean>> {
+  const out = configuredMap();
+  if (!magpieConfigured()) return out;
+  const coverage = await magpieCoverage();
+  for (const key of PROVIDER_KEYS) {
+    if (coverage[key]) out[key] = true;
+  }
+  return out;
+}
+
 /** Fetch a single provider's usage. Never throws — returns ok:false on failure. */
 export async function fetchOneUsage(key: ProviderKey): Promise<ProviderResult> {
   const def = getProvider(key);
+  const localConfigured = def.isConfigured();
+
+  // magpie is the source of truth for the accounts it carries: one place holds
+  // the sign-ins, and asking the vendor here as well would double the calls
+  // and put the same account in two cards. MAGPIE_PREFER=0 keeps magpie as a
+  // fallback only, for a machine whose own credentials should win.
+  const preferMagpie = process.env.MAGPIE_PREFER !== '0' || !localConfigured;
+  const bridged = preferMagpie ? await magpieProviderResult(def.key) : undefined;
+  if (bridged) return bridged;
+
   // A provider with no key at all can only ever produce an error card, so say
   // so without touching the network. Distinct from a configured-but-broken
   // provider, which keeps its red offline card.
-  if (!def.isConfigured()) {
+  if (!localConfigured) {
     return {
       ok: false,
       provider: def.key,
       label: def.key,
       notConfigured: true,
-      error: def.configHint,
+      error: def.configHint + ' — ' + magpieHint(),
     };
   }
   try {

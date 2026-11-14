@@ -18,6 +18,7 @@
 import os from 'node:os';
 import { acquireLease, MIN_LEASE_MS, leaseState, ownerId, releaseLease } from './db';
 import { PROVIDERS, PROVIDER_KEYS } from '../providers';
+import { magpieCoverage } from '../providers/magpie';
 import type { ProviderKey, ProviderResult } from '../providers/types';
 import { extractSample } from './extract';
 import { liveUsage, registryFetcher, type UsageFetcher } from './liveCache';
@@ -70,10 +71,11 @@ export interface PollOptions {
 }
 
 /** Provider keys worth polling: anything the dashboard would show a card for. */
-export function pollableKeys(): ProviderKey[] {
+export async function pollableKeys(): Promise<ProviderKey[]> {
+  const coverage = await magpieCoverage();
   return PROVIDER_KEYS.filter((k) => {
     try {
-      return PROVIDERS[k].isConfigured();
+      return PROVIDERS[k].isConfigured() || coverage[k] === true;
     } catch {
       return false;
     }
@@ -97,7 +99,7 @@ export async function pollOnce(opts: PollOptions = {}): Promise<PollSummary> {
   const fetchUsage = opts.fetchUsage ?? registryFetcher;
   const keys =
     opts.keys ??
-    (opts.assumeConfigured ? [...PROVIDER_KEYS] : pollableKeys());
+    (opts.assumeConfigured ? [...PROVIDER_KEYS] : await pollableKeys());
   const providers: PollProviderOutcome[] = [];
   for (const provider of keys) {
     const t0 = Date.now();

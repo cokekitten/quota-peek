@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { configuredMap } from '@/lib/providers';
+import { configuredMapWithMagpie } from '@/lib/providers';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -13,6 +13,6 @@ export const runtime = 'nodejs';
 export async function GET() {
   return NextResponse.json({
     timestamp: new Date().toISOString(),
-    configured: configuredMap(),
+    configured: await configuredMapWithMagpie(),
   });
 }

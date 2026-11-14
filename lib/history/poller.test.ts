@@ -82,7 +82,7 @@ describe('pollOnce', () => {
     const calls: ProviderKey[] = [];
     // The real isConfigured() reads the filesystem/env; the injected fetcher
     // must never be called for an unconfigured provider.
-    const keys = pollableKeys();
+    const keys = await pollableKeys();
     expect(keys.every((k) => PROVIDER_KEYS.includes(k))).toBe(true);
     await pollOnce({
       keys,

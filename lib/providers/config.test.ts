@@ -11,6 +11,7 @@ import { isConfigured as volcengineConfigured } from './volcengine';
 import { isConfigured as deepseekConfigured } from './deepseek';
 import { isConfigured as mimoConfigured } from './mimo';
 import { isConfigured as cursorConfigured } from './cursor';
+import { isConfigured as devinConfigured } from './devin';
 import { isConfigured as qwenConfigured } from './qwen';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -38,6 +39,9 @@ const ENV_VARS = [
   'CURSOR_NO_KEYCHAIN',
   'QWEN_COOKIE',
   'QWEN_SEC_TOKEN',
+  'DEVIN_API_KEY',
+  'DEVIN_BASE_URL',
+  'DEVIN_CREDENTIALS_PATH',
 ];
 
 function setEnv(name: string, value?: string) {
@@ -70,6 +74,9 @@ describe('key-based provider probes', () => {
     setEnv('KIMI_CREDENTIALS_PATH', '/tmp/quota-peek-definitely-missing.json');
     // Same pin for Cursor: a dev mac has a real `cursor-access-token` item.
     setEnv('CURSOR_NO_KEYCHAIN', '1');
+    // Devin falls back to the devin CLI's own sign-in file, which exists on
+    // machines that ran `devin auth login` — pin it away too.
+    setEnv('DEVIN_CREDENTIALS_PATH', '/tmp/quota-peek-definitely-missing.toml');
     expect(glmConfigured()).toBe(false);
     expect(minimaxConfigured()).toBe(false);
     expect(kimiConfigured()).toBe(false);
@@ -78,6 +85,7 @@ describe('key-based provider probes', () => {
     expect(mimoConfigured()).toBe(false);
     expect(cursorConfigured()).toBe(false);
     expect(qwenConfigured()).toBe(false);
+    expect(devinConfigured()).toBe(false);
   });
 
   it('report configured from the unsuffixed key', () => {
@@ -105,6 +113,8 @@ describe('key-based provider probes', () => {
     expect(glmConfigured()).toBe(true);
     expect(minimaxConfigured()).toBe(true);
     expect(cursorConfigured()).toBe(true);
+    setEnv('DEVIN_API_KEY_2', 'cog_2');
+    expect(devinConfigured()).toBe(true);
   });
 
   it('require both halves of the Volcengine AK/SK pair', () => {

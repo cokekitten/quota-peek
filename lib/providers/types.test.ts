@@ -11,6 +11,7 @@ describe('PROVIDER_KEYS', () => {
       'kimi',
       'codex',
       'cursor',
+      'devin',
       'gemini',
       'deepseek',
       'mimo',

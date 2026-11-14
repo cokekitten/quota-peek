@@ -70,7 +70,7 @@ export interface FetchMultiMeta {
  * maxing one of those leaves the rest of the account usable, so treating it
  * as a blocker would cry wolf.
  */
-const GATING_WINDOW_KINDS = new Set(['5h', 'session', 'weekly', 'monthly']);
+const GATING_WINDOW_KINDS = new Set(['5h', 'session', 'daily', 'weekly', 'monthly']);
 
 /** Labels of the windows that put an account out of service. Exported for tests. */
 export function exhaustedWindows(limits: UsageLimit[]): string[] {
@@ -292,6 +292,7 @@ export function thisUtcMonthStart(): string {
  * not carry an exact `paceStartAt`. */
 const KIND_DURATION_MS: Record<string, number> = {
   '5h': 5 * 3600e3,
+  daily: 24 * 3600e3,
   weekly: 7 * 24 * 3600e3,
   // Monthly windows are billing-cycle anchored (not calendar months) and the
   // APIs don't expose the window start — 30d is the closest uniform estimate.

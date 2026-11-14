@@ -5,6 +5,7 @@ export type ProviderKey =
   | 'gemini'
   | 'codex'
   | 'cursor'
+  | 'devin'
   | 'glm'
   | 'supergrok'
   | 'minimax'
@@ -150,6 +151,7 @@ export const PROVIDER_KEYS: ProviderKey[] = [
   'kimi',
   'codex',
   'cursor',
+  'devin',
   'gemini',
   'deepseek',
   'mimo',

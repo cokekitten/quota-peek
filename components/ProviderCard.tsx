@@ -45,7 +45,8 @@ const getSlots = (provider: ProviderKey) => {
     provider === 'mimo' ||
     provider === 'openrouter' ||
     provider === 'qwen' ||
-    provider === 'cursor'
+    provider === 'cursor' ||
+    provider === 'devin'
   ) {
     return [] as const;
   }
@@ -404,6 +405,7 @@ const clamp01to100 = (v: number): number => Math.min(100, Math.max(0, v));
 /** Window length implied by kind when the provider doesn't state one. */
 function estimatedWindowMs(kind: string): number | null {
   if (kind === '5h' || kind === 'session') return 5 * 3600e3;
+  if (kind === 'daily') return 24 * 3600e3;
   if (kind === 'weekly' || kind.startsWith('weekly_')) return 7 * 24 * 3600e3;
   // Month-anchored, start unknown → 30d estimate; rows without a reset time
   // and without `paceStartAt` get no pace badge at all.
