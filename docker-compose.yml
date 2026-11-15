@@ -17,11 +17,10 @@ services:
       # Hard fail-fast: GLM is the only required key.
       GLM_API_KEY: ${GLM_API_KEY:?GLM_API_KEY is required — set it in .env or your shell}
       # Container-internal secret paths (differ from host paths).
-      CLAUDE_CREDENTIALS_PATH: /secrets/claude/.credentials.json
-      GEMINI_CREDENTIALS_PATH: /secrets/gemini/antigravity-oauth-token
-      CODEX_AUTH_PATH: /secrets/codex-auth.json
-      GROK_AUTH_PATH: /secrets/grok/auth.json
-      KIMI_CREDENTIALS_PATH: /secrets/kimi-creds.json
+      # Claude / Gemini / Codex / Grok / Kimi CLI sign-ins are gone: those CLIs
+      # were uninstalled on 2026-11-15 and their cards now come from magpie
+      # (MAGPIE_BASE_URL + MAGPIE_GATEWAY_KEY in .env). Re-add a mount below if
+      # this box ever logs in to one of them again.
       # StepFun: Step Plan refresh tokens rotate on every renewal, so the rotated
       # pair must survive a recreate — losing it kills the session. Writable dir
       # (this is our cache file, not a CLI credential file).
@@ -34,17 +33,8 @@ services:
       QP_POLL_INTERVAL_MS: ${QP_POLL_INTERVAL_MS:-300000}
       QP_HISTORY_DAYS: ${QP_HISTORY_DAYS:-90}
     volumes:
-      # Directory mounts: mount parent dirs so missing credential files don't cause
-      # Docker daemon to create bogus directories on the host.
-      - ${CLAUDE_DIR:-~/.claude}:/secrets/claude:ro
-      - ${GEMINI_DIR:-~/.gemini/antigravity-cli}:/secrets/gemini
-      - ${CODEX_AUTH:-~/.codex/auth.json}:/secrets/codex-auth.json:ro
-      # Directory mount (rw): xAI refresh tokens rotate; write-back must hit the
-      # same file the grok CLI reads. A file-only :ro mount burns the login.
-      - ${GROK_DIR:-~/.grok}:/secrets/grok
-      # Mounted read-only: in Docker prefer KIMI_API_KEY, since OAuth tokens
-      # last ~15 min and refresh write-back needs a writable file.
-      - ${KIMI_CREDENTIALS:-~/.kimi-code/credentials/kimi-code.json}:/secrets/kimi-creds.json:ro
+      # Claude / Gemini / Codex / Grok / Kimi credential mounts were removed with
+      # the local CLIs (2026-11-15); magpie carries those accounts now.
       # StepFun session cache dir (created on first refresh, 0600 file inside).
       - ./stepfun-session:/secrets/stepfun
       # MiMo renewed-session cache dir (same pattern as StepFun: the rotated
