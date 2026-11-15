@@ -44,6 +44,7 @@ describe('provider + window mapping', () => {
     expect(magpieProviderFor({ provider: 'devin' })).toBe('devin');
     expect(magpieProviderFor({ provider: 'antigravity' })).toBe('gemini');
     expect(magpieProviderFor({ provider: 'claude' })).toBe('claude');
+    expect(magpieProviderFor({ provider: 'agy-cli' })).toBe('gemini');
     expect(magpieProviderFor({ provider: 'openai' })).toBeUndefined();
     expect(magpieProviderFor({})).toBeUndefined();
   });
@@ -56,6 +57,16 @@ describe('provider + window mapping', () => {
     expect(windowKind({ provider: 'devin' }, { name: '1 day' })).toEqual({
       kind: 'daily',
       label: 'Daily',
+    });
+    // The quota report names the provider agy-cli and puts the pool in the
+    // window name instead of a pool field.
+    expect(windowKind({ provider: 'agy-cli' }, { name: 'Gemini · 5 hours' })).toEqual({
+      kind: '5h',
+      label: '5h Window',
+    });
+    expect(windowKind({ provider: 'agy-cli' }, { name: 'Claude & GPT · 7 days' })).toEqual({
+      kind: '3p_weekly',
+      label: '3P Models · Weekly',
     });
     expect(windowKind({ provider: 'cursor' }, { name: 'Grok Bot' })).toEqual({
       kind: 'grok-bot',

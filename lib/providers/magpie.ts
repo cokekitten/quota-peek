@@ -75,6 +75,8 @@ const CARD_PROVIDERS: Record<string, ProviderKey> = {
   cursor: 'cursor',
   devin: 'devin',
   antigravity: 'gemini',
+  'agy-cli': 'gemini',
+  agy: 'gemini',
   // Subscription plans magpie files under the vendor's own id.
   grok: 'supergrok',
   'kimi-code': 'kimi',
@@ -127,6 +129,20 @@ function slug(name: string): string {
   );
 }
 
+/** Antigravity's account ids: its Usage card says antigravity, its quota
+ *  report says agy-cli. */
+const ANTIGRAVITY_IDS = new Set(['antigravity', 'agy-cli', 'agy']);
+
+/** The pool a window draws on: magpie's explicit pool field, or the
+ *  "Gemini ·" / "Claude & GPT ·" prefix its pooled windows carry instead. */
+function poolOf(card: MagpieCard, w: MagpieWindow): string | undefined {
+  if (w.pool) return w.pool;
+  if (!ANTIGRAVITY_IDS.has((card.provider || '').toLowerCase())) return undefined;
+  const name = (w.name || '').trim();
+  const i = name.indexOf('·');
+  return i > 0 ? name.slice(0, i).trim() : undefined;
+}
+
 /** Canonical kind + label for a magpie window name. */
 export function windowKind(
   card: MagpieCard,
@@ -140,11 +156,18 @@ export function windowKind(
   // Antigravity pools: the Gemini half is this card's own quota, everything
   // else (Claude, GPT) is the 3P half — the same split the native provider
   // shows as 5h/weekly + 3P Models.
-  if (card.provider === 'antigravity' && w.pool) {
-    const own = w.pool.toLowerCase() === 'gemini';
-    if (hours5) return own ? { kind: '5h', label: '5h Window' } : { kind: '3p_5h', label: '3P Models · 5h' };
-    if (weekly) return own ? { kind: 'weekly', label: 'Weekly' } : { kind: '3p_weekly', label: '3P Models · Weekly' };
-    return { kind: slug(`${w.pool}-${name}`), label: `${w.pool} · ${name}` };
+  const pool = poolOf(card, w);
+  if (pool) {
+    const own = pool.toLowerCase() === 'gemini';
+    if (hours5) {
+      return own ? { kind: '5h', label: '5h Window' } : { kind: '3p_5h', label: '3P Models · 5h' };
+    }
+    if (weekly) {
+      return own
+        ? { kind: 'weekly', label: 'Weekly' }
+        : { kind: '3p_weekly', label: '3P Models · Weekly' };
+    }
+    return { kind: slug(pool + '-' + name), label: pool + ' · ' + name };
   }
   if (hours5) return { kind: '5h', label: '5h Window' };
   if (weekly) return { kind: 'weekly', label: 'Weekly' };
